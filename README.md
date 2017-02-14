@@ -28,3 +28,27 @@ FileIO.fromPath(Paths.get("source-file.dcm"))
   .map(_.bytes)
   .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
 ```
+
+The next example materializes the above stream as dcm4che `Attributes` objects instead of writing data to disk.
+
+```scala
+import akka.stream.scaladsl.FileIO
+import java.nio.file.Paths
+import org.dcm4che3.data.{Attributes, Tag}
+import scala.concurrent.Future
+import se.nimsa.dcm4che.streams.DicomAttributesSink._
+import se.nimsa.dcm4che.streams.DicomFlows._
+import se.nimsa.dcm4che.streams.DicomPartFlow._
+
+val futureAttributes: Future[(Option[Attributes], Option[Attributes])] =
+  FileIO.fromPath(Paths.get("source-file.dcm"))
+    .via(validateFlow)
+    .via(partFlow)
+    .via(partFilter(Seq(Tag.PatientName, Tag.PatientID)))
+    .via(attributeFlow) // must turn headers + chunks into complete attributes before materializing
+    .runWith(attributesSink)
+    
+futureAttributes.map {
+  case (maybeMetaInformation, maybeDataset) => ??? // do something with attributes here
+}
+```

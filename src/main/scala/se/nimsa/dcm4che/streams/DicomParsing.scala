@@ -20,6 +20,9 @@ import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 
+/**
+  * Helper methods for parsing binary DICOM data.
+  */
 trait DicomParsing {
 
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean)

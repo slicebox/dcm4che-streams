@@ -23,6 +23,9 @@ import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
 import akka.util.ByteString
 import org.dcm4che3.io.DicomStreamException
 
+/**
+  * Various flows for transforming streams of <code>DicomPart</code>s.
+  */
 object DicomFlows {
 
   import DicomPartFlow._

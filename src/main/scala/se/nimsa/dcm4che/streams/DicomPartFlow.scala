@@ -26,6 +26,19 @@ import org.dcm4che3.io.DicomStreamException
 import org.dcm4che3.util.TagUtils
 import se.nimsa.dcm4che.streams.DicomPartFlow._
 
+/**
+  * Flow which ingests a stream of bytes and outputs a stream of DICOM file parts such as specified by the <code>DicomPart</code>
+  * trait. Example DICOM parts are the preamble, headers (tag, VR, length), value chunks (the data in an attribute divided into chunks),
+  * items, sequences and fragments.
+  *
+  * This class is heavily and exclusively based on the dcm4che
+  * <a href="https://github.com/dcm4che/dcm4che/blob/master/dcm4che-core/src/test/java/org/dcm4che3/io/DicomInputStreamTest.java">DicomInputStream</a>
+  * class, but adapted to output streaming results using AKKA Streams.
+  *
+  * @param chunkSize the maximum size of a DICOM attribute data chunk
+  * @param stopTag optional stop tag (exclusive) after which reading of incoming data bytes is stopped
+  * @param inflate indicates whether deflated DICOM data should be deflated and parsed or passed on as deflated data chunks.
+  */
 class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate: Boolean = true) extends ByteStringParser[DicomPart] with DicomParsing {
 
   import ByteStringParser._
