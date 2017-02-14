@@ -14,16 +14,18 @@ lazy val root = (project in file(".")).enablePlugins(GitBranchPrompt)
 // repos
 
 resolvers ++= Seq(
-  "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/")
+  "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/",
+  "dcm4che Repository" at "http://www.dcm4che.org/maven2/")
 
 // deps
 
 libraryDependencies ++= {
-  val akkaVersion = "2.4.16"
+  val akkaVersion = "2.4.17"
   Seq(
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
     "org.slf4j" % "slf4j-simple" % "1.7.22",
+    "org.dcm4che" % "dcm4che-core" % "3.3.8" % "provided",
     "org.scalatest" %% "scalatest" % "3.0.1" % "test",
     "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % "test"
   )
