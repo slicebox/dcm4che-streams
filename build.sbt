@@ -36,3 +36,39 @@ updateOptions := updateOptions.value.withCachedResolution(true)
 // for automatic license stub generation
 
 headers := Map("scala" -> Apache2_0("2017", "Lars Edenbrandt"))
+
+// publish
+publishMavenStyle := true
+
+publishArtifact in Test := false
+
+publishTo := {
+  val nexus = "https://oss.sonatype.org/"
+  if (isSnapshot.value)
+    Some("snapshots" at nexus + "content/repositories/snapshots")
+  else
+    Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+}
+
+pomIncludeRepository := { _ => false }
+
+pomExtra := (
+  <url>https://github.com/slicebox/dcm4che-streams</url>
+    <licenses>
+      <license>
+        <name>Apache-2.0</name>
+        <url>https://opensource.org/licenses/Apache-2.0</url>
+        <distribution>repo</distribution>
+      </license>
+    </licenses>
+    <scm>
+      <url>git@github.com:slicebox/dcm4che-streams.git</url>
+      <connection>scm:git:git@github.com:slicebox/dcm4che-streams.git</connection>
+    </scm>
+    <developers>
+      <developer>
+        <id>KarlSjostrand</id>
+        <name>Karl Sjöstrand</name>
+        <url>https://github.com/KarlSjostrand</url>
+      </developer>
+    </developers>)
