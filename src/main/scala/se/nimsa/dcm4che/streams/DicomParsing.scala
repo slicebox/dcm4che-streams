@@ -20,12 +20,31 @@ import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 
+
 /**
   * Helper methods for parsing binary DICOM data.
   */
 trait DicomParsing {
+  val TRANSFER_SYNTAX_IMPLICIT_VR_LITTLE_ENDIAN = "1.2.840.10008.1.2"
+  val TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN = "1.2.840.10008.1.2.1"
+  val TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN = "1.2.840.10008.1.2.2"
 
-  case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean)
+  case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
+    /**
+      * Best guess for transfer syntax.
+      * @return transfer syntax uid value
+      */
+    def assumedTransferSyntax = if (explicitVR) {
+      if (bigEndian) {
+        TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN
+      } else {
+        TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN
+      }
+    } else {
+      TRANSFER_SYNTAX_IMPLICIT_VR_LITTLE_ENDIAN
+    }
+  }
+  case class Attribute(tag: Int, length: Int, value: ByteString)
 
   def dicomInfo(data: ByteString): Option[Info] =
     dicomInfo(data, assumeBigEndian = false)
@@ -55,6 +74,34 @@ trait DicomParsing {
     }
   }
 
+  // parse dicom attribute from file meta info, explict VR, little endian
+  def fileMetaInformationUIDAttribute(data: ByteString, explicitVR: Boolean, assumeBigEndian: Boolean): Attribute = {
+    val tag1 = bytesToTag(data, 0, assumeBigEndian)
+
+    if (explicitVR) {
+      if (bytesToVR(data, 4) == VR.UI.code()) {
+        val length = bytesToShort(data, 6, assumeBigEndian)
+        val value = data.drop(8).take(length)
+        Attribute(tag1, length, valueWithoutPadding(value))
+      } else {
+        throw new DicomStreamException("Attribute in file meta information: expected eplicit VR of type UI")
+      }
+    } else {
+      // implicit VR, little endian
+      val length = bytesToInt(data, 4, false)
+      val value = data.drop(8).take(length)
+      Attribute(tag1, length, valueWithoutPadding(value))
+    }
+  }
+
+  def valueWithoutPadding(value: ByteString) =
+    if (value.takeRight(1).contains(0.toByte)) {
+      value.dropRight(1)
+    } else {
+      value
+    }
+
+
   def isPreamble(data: ByteString): Boolean = data.slice(128, 132) == ByteString('D', 'I', 'C', 'M')
 
   def tagVr(data: ByteString, bigEndian: Boolean, explicitVr: Boolean): (Int, VR) = {
@@ -68,6 +115,10 @@ trait DicomParsing {
   }
 
   def isFileMetaInformation(tag: Int) = (tag & 0xFFFF0000) == 0x00020000
+  def isMediaStorageSOPClassUID(tag: Int) = tag == 0x00020002
+  def isTransferSyntaxUID(tag: Int) = tag == 0x00020010
+  def isSOPClassUID(tag: Int) = tag == 0x00080016
+
   def isGroupLength(tag: Int) = elementNumber(tag) == 0
 
   def groupNumber(tag: Int) = tag >>> 16

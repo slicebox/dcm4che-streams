@@ -173,6 +173,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectError()
   }
 
+
   it should "accept any file that starts like a DICOM file" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ ByteString.fromArray(new Array[Byte](1024))
 
@@ -188,4 +189,272 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .request(1)
       .expectNext(ByteString(0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
   }
+
+  "The DICOM validation flow with contexts" should "buffer first 512 bytes" in {
+
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = preamble ++
+      fmiGroupLength(tsuidExplicitLE) ++
+      fmiVersion ++
+      mediaStorageSOPClassUID ++
+      mediaStorageSOPInstanceUID ++
+      tsuidExplicitLE ++
+      ByteString.fromArray(new Array[Byte](1024))
+
+    val source = Source.single(bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(bytes.take(512))
+      .request(1)
+      .expectNext(ByteString(0))
+
+  }
+
+  it should "accept dicom data that corresponds to the given contexts" in {
+
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = preamble ++
+      fmiGroupLength(tsuidExplicitLE) ++
+      fmiVersion ++
+      mediaStorageSOPClassUID ++
+      mediaStorageSOPInstanceUID ++
+      tsuidExplicitLE
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(moreThan512Bytes.take(512))
+      .request(1)
+      .expectNext(ByteString(0))
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(bytes)
+      .expectComplete()
+
+  }
+
+
+  it should "not accept dicom data that does not correspond to the given contexts" in {
+
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.2"))
+    val bytes = preamble ++
+      fmiGroupLength(tsuidExplicitLE) ++
+      fmiVersion ++
+      mediaStorageSOPClassUID ++
+      mediaStorageSOPInstanceUID ++
+      tsuidExplicitLE
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+
+  }
+
+
+  it should "be able to parse dicom file meta information with missing mandatory fields" in {
+
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = preamble ++
+      fmiVersion ++
+      mediaStorageSOPClassUID ++
+      tsuidExplicitLE
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(moreThan512Bytes.take(512))
+      .request(1)
+      .expectNext(ByteString(0))
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(bytes)
+      .expectComplete()
+  }
+
+  it should "be able to parse dicom file meta information with wrong transfer syntax" in {
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+
+    val bytes = preamble ++
+      fmiVersionImplicitLE ++
+      mediaStorageSOPClassUIDImplicitLE ++
+      tsuidExplicitLEImplicitLE
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(moreThan512Bytes.take(512))
+      .request(1)
+      .expectNext(ByteString(0))
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(new Chunker(1))
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(bytes)
+      .expectComplete()
+  }
+
+  it should "accept a file with no preamble and which starts with an attribute header if no context is given" in {
+    val bytes = patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(validateFlow)
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(patientNameJohnDoe)
+      .expectComplete()
+  }
+
+  it should "not accept a file with no preamble and no SOPCLassUID if a context is given" in {
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = instanceCreatorUID
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+  }
+
+  it should "not accept a file with no preamble and wrong order of DICOM fields if a context is given" in {
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = patientNameJohnDoe ++
+      sopClassUID
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+  }
+
+  it should "not accept a file with no preamble and SOPClassUID if not corrseponding to the given context" in {
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.2"))
+    val bytes = instanceCreatorUID ++
+      sopClassUID ++
+      patientNameJohnDoe
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectError()
+  }
+
+  it should "accept a file with no preamble and SOPClassUID if corrseponding to the given context" in {
+    val contexts = Seq(Context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1"))
+    val bytes = instanceCreatorUID ++
+      sopClassUID ++
+      patientNameJohnDoe
+
+    val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
+
+    // test with more than 512 bytes
+    var source = Source.single(moreThan512Bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(moreThan512Bytes)
+      .expectComplete()
+
+    // test with less than 512 bytes
+    source = Source.single(bytes)
+      .via(validateFlowWithContext(contexts))
+
+    source.runWith(TestSink.probe[ByteString])
+      .request(1)
+      .expectNext(bytes)
+      .expectComplete()
+  }
+
 }
