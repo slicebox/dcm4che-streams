@@ -23,7 +23,7 @@ import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
 import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
-
+import org.dcm4che3.data.Tag._
 
 /**
   * Various flows for transforming streams of <code>DicomPart</code>s.
@@ -148,18 +148,18 @@ object DicomFlows {
           }
         }
 
-        // Find  and validate MediaSOPClassUID and TranferSyntaxUID
+        // Find and validate MediaSOPClassUID and TranferSyntaxUID
         private def validateFileMetaInformation(data: ByteString, info: Info) = {
           var currentTag = -1
           var currentData = data
 
-          val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", isMediaStorageSOPClassUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
+          val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
           if (!failed) {
             currentData = tailData
             // Media SOP CLass UID
             val mscu = DicomParsing.fileMetaInformationUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
-            val (nextFailed, nextTailData) = findAndValidateField(currentData, info, "TransferSyntaxUID", isTransferSyntaxUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
+            val (nextFailed, nextTailData) = findAndValidateField(currentData, info, "TransferSyntaxUID", (tag: Int) => tag == TransferSyntaxUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
             if (!nextFailed) {
               currentData = nextTailData
               val tsuid = DicomParsing.fileMetaInformationUIDAttribute(currentData, info.explicitVR, info.bigEndian) // Transfer Syntax UID
@@ -178,7 +178,7 @@ object DicomFlows {
         // Find and validate SOPCLassUID
         private def validateSOPClassUID(data: ByteString, info: Info) = {
 
-          val (failed, tailData) = findAndValidateField(data, info, "SOPClassUID", isSOPClassUID, (tag: Int) => tag > 0x00080016)
+          val (failed, tailData) = findAndValidateField(data, info, "SOPClassUID", (tag: Int) => tag == SOPClassUID, (tag: Int) => tag > SOPClassUID)
 
           if (!failed) {
             // SOP CLass UID

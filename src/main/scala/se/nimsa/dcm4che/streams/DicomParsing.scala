@@ -19,15 +19,13 @@ package se.nimsa.dcm4che.streams
 import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
+import org.dcm4che3.data.UID._
 
 
 /**
   * Helper methods for parsing binary DICOM data.
   */
 trait DicomParsing {
-  val TRANSFER_SYNTAX_IMPLICIT_VR_LITTLE_ENDIAN = "1.2.840.10008.1.2"
-  val TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN = "1.2.840.10008.1.2.1"
-  val TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN = "1.2.840.10008.1.2.2"
 
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
     /**
@@ -36,12 +34,12 @@ trait DicomParsing {
       */
     def assumedTransferSyntax = if (explicitVR) {
       if (bigEndian) {
-        TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN
+        ExplicitVRBigEndianRetired
       } else {
-        TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN
+        ExplicitVRLittleEndian
       }
     } else {
-      TRANSFER_SYNTAX_IMPLICIT_VR_LITTLE_ENDIAN
+      ImplicitVRLittleEndian
     }
   }
   case class Attribute(tag: Int, length: Int, value: ByteString)
@@ -115,9 +113,6 @@ trait DicomParsing {
   }
 
   def isFileMetaInformation(tag: Int) = (tag & 0xFFFF0000) == 0x00020000
-  def isMediaStorageSOPClassUID(tag: Int) = tag == 0x00020002
-  def isTransferSyntaxUID(tag: Int) = tag == 0x00020010
-  def isSOPClassUID(tag: Int) = tag == 0x00080016
 
   def isGroupLength(tag: Int) = elementNumber(tag) == 0
 
