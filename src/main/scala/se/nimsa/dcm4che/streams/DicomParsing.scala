@@ -20,7 +20,7 @@ import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 import org.dcm4che3.data.UID._
-
+import org.dcm4che3.data.Tag._
 
 /**
   * Helper methods for parsing binary DICOM data.
@@ -42,7 +42,7 @@ trait DicomParsing {
       ImplicitVRLittleEndian
     }
   }
-  case class Attribute(tag: Int, length: Int, value: ByteString)
+  case class DataElement(tag: Int, vr: VR, length: Int, value: ByteString)
 
   def dicomInfo(data: ByteString): Option[Info] =
     dicomInfo(data, assumeBigEndian = false)
@@ -72,25 +72,23 @@ trait DicomParsing {
     }
   }
 
-  // parse dicom attribute from file meta info, explict VR, little endian
-  def fileMetaInformationUIDAttribute(data: ByteString, explicitVR: Boolean, assumeBigEndian: Boolean): Attribute = {
-    val tag1 = bytesToTag(data, 0, assumeBigEndian)
-
-    if (explicitVR) {
-      if (bytesToVR(data, 4) == VR.UI.code()) {
-        val length = bytesToShort(data, 6, assumeBigEndian)
-        val value = data.drop(8).take(length)
-        Attribute(tag1, length, valueWithoutPadding(value))
-      } else {
-        throw new DicomStreamException("Attribute in file meta information: expected eplicit VR of type UI")
-      }
+  // parse dicom UID data element from buffer
+  def parseUIDDataElement(data: ByteString, explicitVR: Boolean, assumeBigEndian: Boolean): DataElement = {
+    val maybeHeader = if (explicitVR) {
+      readHeaderExplicitVR(data, assumeBigEndian)
     } else {
-      // implicit VR, little endian
-      val length = bytesToInt(data, 4, false)
-      val value = data.drop(8).take(length)
-      Attribute(tag1, length, valueWithoutPadding(value))
+      readHeaderImplicitVR(data)
     }
+
+    if (maybeHeader.isEmpty) {
+      throw new DicomStreamException("Could not parse DICOM data element from stream.")
+    }
+
+    val (tag, vr, headerLength, length) = maybeHeader.get
+    val value = data.drop(headerLength).take(length)
+    DataElement(tag, vr, length, valueWithoutPadding(value))
   }
+
 
   def valueWithoutPadding(value: ByteString) =
     if (value.takeRight(1).contains(0.toByte)) {
@@ -98,6 +96,56 @@ trait DicomParsing {
     } else {
       value
     }
+
+  /**
+    * Read header of data element for explicit VR
+    * @param buffer current buffer
+    * @param assumeBigEndian true if big endian, false otherwise
+    * @return
+    */
+  def readHeaderExplicitVR(buffer: ByteString, assumeBigEndian: Boolean): Option[(Int, VR, Int, Int)] = {
+    if (buffer.size >= 8) {
+      val tagVr = buffer.take(8)
+      val (tag, vr) = DicomParsing.tagVr(tagVr, assumeBigEndian, true)
+      if (vr.headerLength == 8) {
+        Some((tag, vr, 8, bytesToUShort(tagVr, 6, assumeBigEndian)))
+      } else {
+        if (buffer.size >= 12) {
+          Some((tag, vr, 12, bytesToInt(buffer, 8, assumeBigEndian)))
+        } else {
+          None
+        }
+      }
+    } else {
+      None
+    }
+  }
+
+  /**
+    * Read header of data element for implicit VR, handles special case for FileMetaInformationVersion.
+    * @param buffer current buffer
+    * @return
+    */
+  def readHeaderImplicitVR(buffer: ByteString): Option[(Int, VR, Int, Int)] = {
+    val assumeBigEndian = false // implicit VR
+    if (buffer.size >= 8) {
+      val tag = DicomParsing.bytesToTag(buffer, 0, assumeBigEndian)
+      val vr = ElementDictionary.getStandardElementDictionary.vrOf(tag)
+      if ((vr == VR.OB) && (tag == FileMetaInformationVersion)) {
+        Some((tag, vr, 8, bytesToInt(buffer, 4, assumeBigEndian)))
+      } else if (vr.headerLength == 8) {
+        Some((tag, vr, 8, bytesToInt(buffer, 4, assumeBigEndian)))
+      } else {
+        if (buffer.size >= 12) {
+          Some((tag, vr, 12, bytesToInt(buffer, 8, assumeBigEndian)))
+        } else {
+          None
+        }
+      }
+    } else {
+      None
+    }
+  }
 
 
   def isPreamble(data: ByteString): Boolean = data.slice(128, 132) == ByteString('D', 'I', 'C', 'M')
