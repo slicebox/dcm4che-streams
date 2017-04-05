@@ -42,7 +42,7 @@ trait DicomParsing {
       ImplicitVRLittleEndian
     }
   }
-  case class DataElement(tag: Int, vr: VR, length: Int, value: ByteString)
+  case class Attribute(tag: Int, vr: VR, length: Int, value: ByteString)
 
   def dicomInfo(data: ByteString): Option[Info] =
     dicomInfo(data, assumeBigEndian = false)
@@ -72,8 +72,15 @@ trait DicomParsing {
     }
   }
 
-  // parse dicom UID data element from buffer
-  def parseUIDDataElement(data: ByteString, explicitVR: Boolean, assumeBigEndian: Boolean): DataElement = {
+  // parse dicom UID attribute from buffer
+  def parseUIDAttribute(data: ByteString, explicitVR: Boolean, assumeBigEndian: Boolean): Attribute = {
+    def valueWithoutPadding(value: ByteString) =
+      if (value.takeRight(1).contains(0.toByte)) {
+        value.dropRight(1)
+      } else {
+        value
+      }
+
     val maybeHeader = if (explicitVR) {
       readHeaderExplicitVR(data, assumeBigEndian)
     } else {
@@ -86,16 +93,9 @@ trait DicomParsing {
 
     val (tag, vr, headerLength, length) = maybeHeader.get
     val value = data.drop(headerLength).take(length)
-    DataElement(tag, vr, length, valueWithoutPadding(value))
+    Attribute(tag, vr, length, valueWithoutPadding(value))
   }
 
-
-  def valueWithoutPadding(value: ByteString) =
-    if (value.takeRight(1).contains(0.toByte)) {
-      value.dropRight(1)
-    } else {
-      value
-    }
 
   /**
     * Read header of data element for explicit VR

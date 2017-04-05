@@ -124,12 +124,12 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
         val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
         if (!failed) {
           currentData = tailData
-          val mscu = DicomParsing.parseUIDDataElement(currentData, info.explicitVR, info.bigEndian)
+          val mscu = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
           val (nextFailed, nextTailData) = findAndValidateField(currentData, info, "TransferSyntaxUID", (tag: Int) => tag == TransferSyntaxUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
           if (!nextFailed) {
             currentData = nextTailData
-            val tsuid = DicomParsing.parseUIDDataElement(currentData, info.explicitVR, info.bigEndian)
+            val tsuid = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
             val currentContext = Context(mscu.value.utf8String, tsuid.value.utf8String)
             if (contexts.get.contains(currentContext)) {
@@ -149,7 +149,7 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
 
         if (!failed) {
           // SOP CLass UID
-          val scuid = DicomParsing.parseUIDDataElement(tailData, info.explicitVR, info.bigEndian)
+          val scuid = DicomParsing.parseUIDAttribute(tailData, info.explicitVR, info.bigEndian)
 
           // transfer syntax: best guess
           val tsuid = info.assumedTransferSyntax
