@@ -107,7 +107,16 @@ trait DicomParsing {
     if (buffer.size >= 8) {
       val tagVr = buffer.take(8)
       val (tag, vr) = DicomParsing.tagVr(tagVr, assumeBigEndian, true)
-      if (vr.headerLength == 8) {
+      if (vr == null) {
+        // special case: sequences, length might be undefined '0xFFFFFFFF'
+        val valueLength = bytesToInt(tagVr, 4, assumeBigEndian)
+        if (valueLength == -1) {
+          // length of sequence undefined, not supported
+          None
+        } else {
+          Some((tag, vr, 8, bytesToInt(tagVr, 4, assumeBigEndian)))
+        }
+      } else if (vr.headerLength == 8) {
         Some((tag, vr, 8, bytesToUShort(tagVr, 6, assumeBigEndian)))
       } else {
         if (buffer.size >= 12) {
@@ -134,7 +143,13 @@ trait DicomParsing {
       if ((vr == VR.OB) && (tag == FileMetaInformationVersion)) {
         Some((tag, vr, 8, bytesToInt(buffer, 4, assumeBigEndian)))
       } else if (vr.headerLength == 8) {
-        Some((tag, vr, 8, bytesToInt(buffer, 4, assumeBigEndian)))
+        val valueLength = bytesToInt(buffer, 4, assumeBigEndian)
+        if ((tag == 0xFFFEE000 || tag == 0xFFFEE00D || tag == 0xFFFEE0DD) && valueLength == -1) {
+          // special case: sequences, with undefined length '0xFFFFFFFF' not supported
+          None
+        } else {
+          Some((tag, vr, 8, valueLength))
+        }
       } else {
         if (buffer.size >= 12) {
           Some((tag, vr, 12, bytesToInt(buffer, 8, assumeBigEndian)))
@@ -189,6 +204,7 @@ trait DicomParsing {
   def bytesToInt(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToIntBE(bytes, off) else bytesToIntLE(bytes, off)
   def bytesToIntBE(bytes: ByteString, off: Int) = (bytes(off) << 24) + ((bytes(off + 1) & 255) << 16) + ((bytes(off + 2) & 255) << 8) + (bytes(off + 3) & 255)
   def bytesToIntLE(bytes: ByteString, off: Int) = (bytes(off + 3) << 24) + ((bytes(off + 2) & 255) << 16) + ((bytes(off + 1) & 255) << 8) + (bytes(off) & 255)
+  def asUnsignedInt(value: Int) : Long = value & 0x00000000ffffffffL
 }
 
 object DicomParsing extends DicomParsing
