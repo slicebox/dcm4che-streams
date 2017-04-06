@@ -18,10 +18,7 @@ package se.nimsa.dcm4che.streams
 
 import akka.NotUsed
 import akka.stream.scaladsl.Flow
-import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
-import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
 import akka.util.ByteString
-import org.dcm4che3.io.DicomStreamException
 
 /**
   * Various flows for transforming streams of <code>DicomPart</code>s.
@@ -29,7 +26,6 @@ import org.dcm4che3.io.DicomStreamException
 object DicomFlows {
 
   import DicomPartFlow._
-  import DicomParsing._
 
   case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
     def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
@@ -41,65 +37,9 @@ object DicomFlows {
     def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
   }
 
-  private class DicomValidateFlow() extends GraphStage[FlowShape[ByteString, ByteString]] {
-    val in = Inlet[ByteString]("DicomValidateFlow.in")
-    val out = Outlet[ByteString]("DicomValidateFlow.out")
-    override val shape = FlowShape.of(in, out)
+  case class Context(sopClassUID: String, transferSyntax: String)
 
-    override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
-      var buffer = ByteString.empty
-      var isValidated = false
 
-      setHandlers(in, out, new InHandler with OutHandler {
-
-        override def onPull(): Unit = {
-          pull(in)
-        }
-
-        override def onPush(): Unit = {
-          val chunk = grab(in)
-          if (isValidated)
-            push(out, chunk)
-          else {
-            buffer = buffer ++ chunk
-            if (buffer.length >= 140)
-              if (isPreamble(buffer))
-                if (isHeader(buffer.drop(132)))
-                  setValidated()
-                else
-                  setFailed()
-              else if (isHeader(buffer))
-                setValidated()
-              else
-                setFailed()
-            else
-              pull(in)
-          }
-        }
-
-        override def onUpstreamFinish() = {
-          if (!isValidated)
-            if (buffer.length == 132 && isPreamble(buffer))
-              setValidated()
-            else if (buffer.length >= 8 && isHeader(buffer))
-              setValidated()
-            else
-              setFailed()
-          completeStage()
-        }
-
-        def isHeader(data: ByteString) = DicomParsing.dicomInfo(data).isDefined
-
-        def setValidated() = {
-          isValidated = true
-          push(out, buffer)
-        }
-
-        def setFailed() = failStage(new DicomStreamException("Not a DICOM stream"))
-
-      })
-    }
-  }
 
   /**
     * Print each element and then pass it on unchanged.
@@ -208,5 +148,11 @@ object DicomFlows {
     * A flow which passes on the input bytes unchanged, but fails for non-DICOM files, determined by the first
     * attribute found
     */
-  val validateFlow = Flow[ByteString].via(new DicomValidateFlow)
+  val validateFlow = Flow[ByteString].via(new DicomValidateFlow(None))
+
+  /**
+    * A flow which passes on the input bytes unchanged, fails for non-DICOM files, validates for DICOM files with supported
+    * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context
+    */
+  def validateFlowWithContext(contexts: Seq[Context]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 }
