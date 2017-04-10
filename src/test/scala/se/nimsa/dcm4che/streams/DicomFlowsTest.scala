@@ -124,4 +124,57 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+  "The DICOM group length discard filter" should "discard group length elements except 0002,0000" in {
+    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ groupLength ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(groupLengthDiscardFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  "The DICOM blacklist filter" should "filter elements matching the blacklist condition" in {
+    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag) , true))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+
+  "The DICOM whitelist filter" should "filter elements not matching the whitelist condition" in {
+    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE  ++ patientNameJohnDoe ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8 , true))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
 }
+

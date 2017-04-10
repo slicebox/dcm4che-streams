@@ -103,27 +103,72 @@ object DicomFlows {
     * @param applyToFmi    if false, this filter does not affect the FMI
     * @return the associated filter Flow
     */
-  def partFilter(tagsWhitelist: Seq[Int], applyToFmi: Boolean = false) = Flow[DicomPart].statefulMapConcat {
+  def partFilter(tagsWhitelist: Seq[Int], applyToFmi: Boolean = false) = whitelistFilter(tagsWhitelist.contains(_), applyToFmi)
+
+  /**
+    * Filter a stream of dicom parts such that all attributes that are group length elements except
+    * file meta information group length, will be discarded.
+    * @return the associated filter Flow
+    */
+  def groupLengthDiscardFilter = blacklistFilter(DicomParsing.isGroupLength(_), applyToFmi = false)
+
+  /**
+    * Blacklist filter for DICOM parts.
+    * @param tagCondition blacklist condition
+    * @param applyToFmi if false, this filter does not affect the FMI
+    * @return Flow of filtered parts
+    */
+  def blacklistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = false)
+
+  /**
+    * Whitelist filter for DICOM parts.
+    * @param tagCondition whitelist condition
+    * @param applyToFmi if false, this filter does not affect the FMI
+    * @return Flow  of filtered parts
+    */
+  def whitelistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = true)
+
+
+  private def tagFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false, isWhitelist: Boolean = true) = Flow[DicomPart].statefulMapConcat {
     () =>
       var discarding = false
 
-    {
-      case dicomHeader: DicomHeader if tagsWhitelist.contains(dicomHeader.tag) || dicomHeader.isFmi && !applyToFmi =>
-        discarding = false
-        dicomHeader :: Nil
-      case _: DicomHeader =>
-        discarding = true
-        Nil
+      def shouldDiscard(tag: Int, isFmi: Boolean, applyToFmi: Boolean, isWhitelist:Boolean) = {
+        if (isWhitelist) {
+          // Whitelist: condition true or not appply to fmi => discard = false
+          !((tagCondition(tag) || isFmi && !applyToFmi))
+        } else {
+          // Blacklist: condition true or condition true and apply to fmi => discard
+          if (tagCondition(tag)) {
+            if (isFmi) {
+              applyToFmi
+            } else {
+              true
+            }
+          } else {
+            false
+          }
+        }
+      }
 
+    {
+      case dicomHeader: DicomHeader =>
+        discarding = shouldDiscard(dicomHeader.tag, dicomHeader.isFmi, applyToFmi, isWhitelist)
+        if (discarding) {
+          Nil
+        } else {
+          dicomHeader :: Nil
+        }
       case valueChunk: DicomValueChunk => if (discarding) Nil else valueChunk :: Nil
       case fragment: DicomFragment => if (discarding) Nil else fragment :: Nil
 
-      case dicomFragments: DicomFragments if tagsWhitelist.contains(dicomFragments.tag) =>
-        discarding = false
-        dicomFragments :: Nil
-      case _: DicomFragments =>
-        discarding = true
-        Nil
+      case dicomFragments: DicomFragments =>
+        discarding = shouldDiscard(dicomFragments.tag, false, applyToFmi, isWhitelist)
+        if (discarding) {
+          Nil
+        } else {
+          dicomFragments :: Nil
+        }
 
       case _: DicomItem if discarding => Nil
       case _: DicomItemDelimitation if discarding => Nil
@@ -131,12 +176,13 @@ object DicomFlows {
         discarding = false
         Nil
 
-      case dicomAttribute: DicomAttribute if tagsWhitelist.contains(dicomAttribute.header.tag) || dicomAttribute.header.isFmi && !applyToFmi =>
-        discarding = false
-        dicomAttribute :: Nil
-      case _: DicomAttribute =>
-        discarding = false
-        Nil
+      case dicomAttribute: DicomAttribute  =>
+        discarding = shouldDiscard(dicomAttribute.header.tag, dicomAttribute.header.isFmi, applyToFmi, isWhitelist)
+        if (discarding) {
+          Nil
+        } else {
+          dicomAttribute :: Nil
+        }
 
       case dicomPart =>
         discarding = false
@@ -155,4 +201,5 @@ object DicomFlows {
     * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context
     */
   def validateFlowWithContext(contexts: Seq[Context]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
+
 }
