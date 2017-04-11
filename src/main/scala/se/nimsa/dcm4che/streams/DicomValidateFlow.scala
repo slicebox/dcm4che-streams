@@ -19,10 +19,10 @@ package se.nimsa.dcm4che.streams
 import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
-import org.dcm4che3.data.{ElementDictionary, VR}
+import org.dcm4che3.data.VR
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomFlows.Context
-import se.nimsa.dcm4che.streams.DicomParsing.{bytesToInt, bytesToUShort, isPreamble, Info}
+import se.nimsa.dcm4che.streams.DicomParsing.{Info, isPreamble}
 import org.dcm4che3.data.Tag._
 
 /**
