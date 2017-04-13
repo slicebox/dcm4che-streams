@@ -19,10 +19,9 @@ package se.nimsa.dcm4che.streams
 import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
-import org.dcm4che3.data.VR
 import org.dcm4che3.io.DicomStreamException
-import se.nimsa.dcm4che.streams.DicomFlows.Context
-import se.nimsa.dcm4che.streams.DicomParsing.{Info, isPreamble}
+import se.nimsa.dcm4che.streams.DicomFlows.ValidationContext
+import se.nimsa.dcm4che.streams.DicomParsing.{Info, isPreamble, DICOM_PREAMBLE_LENGTH}
 import org.dcm4che3.data.Tag._
 
 /**
@@ -30,7 +29,7 @@ import org.dcm4che3.data.Tag._
   * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context.
   * @param contexts supported MediaStorageSOPClassUID, TransferSynatxUID combinations
   */
-class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowShape[ByteString, ByteString]] {
+class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphStage[FlowShape[ByteString, ByteString]] {
   val in = Inlet[ByteString]("DicomValidateFlow.in")
   val out = Outlet[ByteString]("DicomValidateFlow.out")
   override val shape = FlowShape.of(in, out)
@@ -57,17 +56,17 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
 
           if (buffer.length >= maxBufferLength) {
             if (isPreamble(buffer)) {
-              if (isHeader(buffer.drop(132))) {
+              if (DicomParsing.isHeader(buffer.drop(DICOM_PREAMBLE_LENGTH))) {
                 if (contexts.isDefined) {
-                  val info = DicomParsing.dicomInfo(buffer.drop(132)).get
-                  validateFileMetaInformation(buffer.drop(132), info)
+                  val info = DicomParsing.dicomInfo(buffer.drop(DICOM_PREAMBLE_LENGTH)).get
+                  validateFileMetaInformation(buffer.drop(DICOM_PREAMBLE_LENGTH), info)
                 } else {
                   setValidated()
                 }
               } else {
                 setFailed()
               }
-            } else if (isHeader(buffer)) {
+            } else if (DicomParsing.isHeader(buffer)) {
               if (contexts.isDefined) {
                 val info = DicomParsing.dicomInfo(buffer).get
                 validateSOPClassUID(buffer, info)
@@ -86,19 +85,19 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
       override def onUpstreamFinish() = {
         if (!isValidated)
           if (contexts.isDefined) {
-            if (buffer.length >= 132 && isPreamble(buffer)) {
-              val info = DicomParsing.dicomInfo(buffer.drop(132)).get
-              validateFileMetaInformation(buffer.drop(132), info)
-            } else if (buffer.length >= 8 && isHeader(buffer)) {
+            if (buffer.length >= DICOM_PREAMBLE_LENGTH && isPreamble(buffer)) {
+              val info = DicomParsing.dicomInfo(buffer.drop(DICOM_PREAMBLE_LENGTH)).get
+              validateFileMetaInformation(buffer.drop(DICOM_PREAMBLE_LENGTH), info)
+            } else if (buffer.length >= 8 && DicomParsing.isHeader(buffer)) {
               val info = DicomParsing.dicomInfo(buffer).get
               validateSOPClassUID(buffer, info)
             } else {
               setFailed()
             }
           } else {
-            if (buffer.length == 132 && isPreamble(buffer))
+            if (buffer.length == DICOM_PREAMBLE_LENGTH && isPreamble(buffer))
               setValidated()
-            else if (buffer.length >= 8 && isHeader(buffer))
+            else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
               setValidated()
             else
               setFailed()
@@ -106,15 +105,6 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
         completeStage()
       }
 
-      def isHeader(data: ByteString) = DicomParsing.dicomInfo(data).isDefined
-
-      def readHeader(buffer: ByteString, assumeBigEndian: Boolean, explicitVR: Boolean): Option[(Int, VR, Int, Int)] = {
-        if (explicitVR) {
-          DicomParsing.readHeaderExplicitVR(buffer, assumeBigEndian)
-        } else {
-          DicomParsing.readHeaderImplicitVR(buffer)
-        }
-      }
 
       // Find and validate MediaSOPClassUID and TranferSyntaxUID
       private def validateFileMetaInformation(data: ByteString, info: Info) = {
@@ -131,7 +121,7 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
             currentData = nextTailData
             val tsuid = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
-            val currentContext = Context(mscu.value.utf8String, tsuid.value.utf8String)
+            val currentContext = ValidationContext(mscu.value.utf8String, tsuid.value.utf8String)
             if (contexts.get.contains(currentContext)) {
               setValidated()
             } else {
@@ -154,7 +144,7 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
           // transfer syntax: best guess
           val tsuid = info.assumedTransferSyntax
 
-          val currentContext = Context(scuid.value.utf8String, tsuid)
+          val currentContext = ValidationContext(scuid.value.utf8String, tsuid)
           if (contexts.get.contains(currentContext)) {
             setValidated()
           } else {
@@ -179,7 +169,7 @@ class DicomValidateFlow(contexts: Option[Seq[Context]]) extends GraphStage[FlowS
         def takeMax8(buffer: ByteString) = if (buffer.size >= 8) buffer.take(8) else buffer
 
         while (!found(currentTag) && !failed) {
-          val maybeHeader = readHeader(currentData, info.bigEndian, info.explicitVR)
+          val maybeHeader = DicomParsing.readHeader(currentData, info.bigEndian, info.explicitVR)
           if (maybeHeader.isDefined) {
             val (tag, vr, headerLength, length) = maybeHeader.get
             if (tag < currentTag) {

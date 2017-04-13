@@ -37,7 +37,7 @@ object DicomFlows {
     def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
   }
 
-  case class Context(sopClassUID: String, transferSyntax: String)
+  case class ValidationContext(sopClassUID: String, transferSyntax: String)
 
 
 
@@ -200,6 +200,7 @@ object DicomFlows {
     * A flow which passes on the input bytes unchanged, fails for non-DICOM files, validates for DICOM files with supported
     * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context
     */
-  def validateFlowWithContext(contexts: Seq[Context]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
+  def validateFlowWithContext(contexts: Seq[ValidationContext]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
+
 
 }

@@ -85,7 +85,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
   "The DICOM validation flow with contexts" should "buffer first 512 bytes" in {
 
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = preamble ++
       fmiGroupLength(tsuidExplicitLE) ++
       fmiVersion ++
@@ -108,7 +108,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
   it should "accept dicom data that corresponds to the given contexts" in {
 
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = preamble ++
       fmiGroupLength(tsuidExplicitLE) ++
       fmiVersion ++
@@ -144,7 +144,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
   it should "not accept dicom data that does not correspond to the given contexts" in {
 
-    val contexts = Seq(Context(CTImageStorage, "1.2.840.10008.1.2.2"))
+    val contexts = Seq(ValidationContext(CTImageStorage, "1.2.840.10008.1.2.2"))
     val bytes = preamble ++
       fmiGroupLength(tsuidExplicitLE) ++
       fmiVersion ++
@@ -177,7 +177,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
   it should "be able to parse dicom file meta information with missing mandatory fields" in {
 
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = preamble ++
       fmiVersion ++
       mediaStorageSOPClassUID ++
@@ -208,7 +208,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
   }
 
   it should "be able to parse dicom file meta information with wrong transfer syntax" in {
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
 
     val bytes = preamble ++
       fmiVersionImplicitLE ++
@@ -252,7 +252,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
   }
 
   it should "not accept a file with no preamble and no SOPCLassUID if a context is given" in {
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = instanceCreatorUID
 
     val moreThan512Bytes = bytes ++ ByteString.fromArray(new Array[Byte](1024))
@@ -275,7 +275,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
   }
 
   it should "not accept a file with no preamble and wrong order of DICOM fields if a context is given" in {
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = patientNameJohnDoe ++
       sopClassUID
 
@@ -299,7 +299,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
   }
 
   it should "not accept a file with no preamble and SOPClassUID if not corrseponding to the given context" in {
-    val contexts = Seq(Context(CTImageStorage, "1.2.840.10008.1.2.2"))
+    val contexts = Seq(ValidationContext(CTImageStorage, "1.2.840.10008.1.2.2"))
     val bytes = instanceCreatorUID ++
       sopClassUID ++
       patientNameJohnDoe
@@ -324,7 +324,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
   }
 
   it should "accept a file with no preamble and SOPClassUID if corrseponding to the given context" in {
-    val contexts = Seq(Context(CTImageStorage, ExplicitVRLittleEndian))
+    val contexts = Seq(ValidationContext(CTImageStorage, ExplicitVRLittleEndian))
     val bytes = instanceCreatorUID ++
       sopClassUID ++
       patientNameJohnDoe

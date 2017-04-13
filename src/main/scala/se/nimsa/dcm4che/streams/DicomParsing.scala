@@ -27,6 +27,8 @@ import org.dcm4che3.data.Tag._
   */
 trait DicomParsing {
 
+  val DICOM_PREAMBLE_LENGTH = 132
+
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
     /**
       * Best guess for transfer syntax.
@@ -96,6 +98,16 @@ trait DicomParsing {
     Attribute(tag, vr, length, valueWithoutPadding(value))
   }
 
+
+  def isHeader(data: ByteString) = dicomInfo(data).isDefined
+
+  def readHeader(buffer: ByteString, assumeBigEndian: Boolean, explicitVR: Boolean): Option[(Int, VR, Int, Int)] = {
+    if (explicitVR) {
+      readHeaderExplicitVR(buffer, assumeBigEndian)
+    } else {
+      readHeaderImplicitVR(buffer)
+    }
+  }
 
   /**
     * Read header of data element for explicit VR
@@ -174,7 +186,7 @@ trait DicomParsing {
     else
       (tag, VR.UN)
   }
-
+  def isSequenceDelimiter(tag: Int) = groupNumber(tag) == 0xFFFE
   def isFileMetaInformation(tag: Int) = (tag & 0xFFFF0000) == 0x00020000
 
   def isGroupLength(tag: Int) = elementNumber(tag) == 0
