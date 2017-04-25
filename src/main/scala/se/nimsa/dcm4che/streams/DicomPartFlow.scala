@@ -24,7 +24,6 @@ import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 import org.dcm4che3.util.TagUtils
-import se.nimsa.dcm4che.streams.DicomParsing.DICOM_PREAMBLE_LENGTH
 import se.nimsa.dcm4che.streams.DicomPartFlow._
 
 /**

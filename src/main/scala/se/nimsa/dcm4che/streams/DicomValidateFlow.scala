@@ -108,7 +108,6 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
 
       // Find and validate MediaSOPClassUID and TranferSyntaxUID
       private def validateFileMetaInformation(data: ByteString, info: Info) = {
-        var currentTag = -1
         var currentData = data
 
         val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => ((tag & 0xFFFF0000) > 0x00020000))
