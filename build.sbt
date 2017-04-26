@@ -1,10 +1,10 @@
 import de.heikoseeberger.sbtheader.license.Apache2_0
 
 name := "dcm4che-streams"
-version := "1.0-SNAPSHOT"
+version := "0.1"
 organization := "se.nimsa"
-scalaVersion := "2.12.1"
-crossScalaVersions := Seq("2.11.8", "2.12.1")
+scalaVersion := "2.12.2"
+crossScalaVersions := Seq("2.11.8", "2.12.2")
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
 
 // define the project
