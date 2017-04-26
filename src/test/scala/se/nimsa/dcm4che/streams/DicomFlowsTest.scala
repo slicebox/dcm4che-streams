@@ -144,7 +144,6 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   "The DICOM blacklist filter" should "filter elements matching the blacklist condition" in {
-    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ studyDate
 
     val source = Source.single(bytes)
@@ -160,7 +159,6 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
 
   "The DICOM whitelist filter" should "filter elements not matching the whitelist condition" in {
-    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE  ++ patientNameJohnDoe ++ studyDate
 
     val source = Source.single(bytes)
