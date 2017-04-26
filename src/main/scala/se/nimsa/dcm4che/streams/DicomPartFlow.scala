@@ -67,10 +67,10 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     case object AtBeginning extends DicomParseStep {
       def parse(reader: ByteReader) = {
         val maybePreamble =
-          if (!isUpstreamClosed || reader.remainingSize >= 132) {
-            reader.ensure(132)
-            if (DicomParsing.isPreamble(reader.remainingData.take(132)))
-              Some(DicomPreamble(bytes = reader.take(132)))
+          if (!isUpstreamClosed || reader.remainingSize >= DICOM_PREAMBLE_LENGTH) {
+            reader.ensure(DICOM_PREAMBLE_LENGTH)
+            if (DicomParsing.isPreamble(reader.remainingData.take(DICOM_PREAMBLE_LENGTH)))
+              Some(DicomPreamble(bytes = reader.take(DICOM_PREAMBLE_LENGTH)))
             else None
           }
           else None
