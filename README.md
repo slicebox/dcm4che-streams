@@ -1,5 +1,11 @@
 # dcm4che-streams
 
+Service | Status | Description
+------- | ------ | -----------
+Travis            | [![Build Status](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=develop)](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=develop) | [Tests](https://travis-ci.org/slicebox/dcm4che-streams/)
+Coveralls         | [![Coverage Status](https://coveralls.io/repos/github/slicebox/dcm4che-streams/badge.svg?branch=develop)](https://coveralls.io/github/slicebox/dcm4che-streams?branch=develop) | Code coverage
+
+
 The purpose of this project is to integrate [akka-streams](http://doc.akka.io/docs/akka/current/scala/stream/index.html) 
 with [dcm4che](https://github.com/dcm4che/dcm4che). Features will be added as needed (mainly in the 
 [slicebox](https://github.com/slicebox/slicebox) project) and may include streaming reading and writing of DICOM data,

@@ -129,11 +129,11 @@ object DicomFlows {
   def whitelistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = true)
 
 
-  private def tagFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false, isWhitelist: Boolean = true) = Flow[DicomPart].statefulMapConcat {
+  private def tagFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean, isWhitelist: Boolean) = Flow[DicomPart].statefulMapConcat {
     () =>
       var discarding = false
 
-      def shouldDiscard(tag: Int, isFmi: Boolean, applyToFmi: Boolean, isWhitelist:Boolean) = {
+      def shouldDiscard(tag: Int, isFmi: Boolean, applyToFmi: Boolean, isWhitelist: Boolean) = {
         if (isWhitelist) {
           // Whitelist: condition true or not appply to fmi => discard = false
           !((tagCondition(tag) || isFmi && !applyToFmi))
