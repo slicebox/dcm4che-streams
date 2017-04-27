@@ -41,7 +41,7 @@ object DicomSinks {
 
           validate.out ~> bcast.in
 
-          bcast.out(0) ~> partFlow ~> partFilter(tagsWhiteList, applyToFmi = true) ~> attributeFlow ~> attributesConsumer
+          bcast.out(0) ~> partFlow ~> partFilter(tagsWhiteList) ~> attributeFlow ~> attributesConsumer
           bcast.out(1) ~> bytesConsumer
 
           SinkShape(validate.in)
