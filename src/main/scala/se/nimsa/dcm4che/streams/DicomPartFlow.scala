@@ -36,8 +36,8 @@ import se.nimsa.dcm4che.streams.DicomPartFlow._
   * class, but adapted to output streaming results using AKKA Streams.
   *
   * @param chunkSize the maximum size of a DICOM attribute data chunk
-  * @param stopTag optional stop tag (exclusive) after which reading of incoming data bytes is stopped
-  * @param inflate indicates whether deflated DICOM data should be deflated and parsed or passed on as deflated data chunks.
+  * @param stopTag   optional stop tag (exclusive) after which reading of incoming data bytes is stopped
+  * @param inflate   indicates whether deflated DICOM data should be deflated and parsed or passed on as deflated data chunks.
   */
 class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate: Boolean = true) extends ByteStringParser[DicomPart] with DicomParsing {
 
@@ -273,11 +273,12 @@ object DicomPartFlow {
 
   trait DicomPart {
     def bigEndian: Boolean
-
     def bytes: ByteString
   }
 
-  case class DicomPreamble(bigEndian: Boolean = false, bytes: ByteString) extends DicomPart
+  case class DicomPreamble(bytes: ByteString) extends DicomPart {
+    def bigEndian = false
+  }
 
   case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, bytes: ByteString) extends DicomPart
 

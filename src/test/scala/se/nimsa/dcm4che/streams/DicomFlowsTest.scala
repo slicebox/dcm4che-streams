@@ -6,7 +6,7 @@ import akka.stream.scaladsl.Source
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
-import org.dcm4che3.data.Tag
+import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{FlatSpecLike, Matchers}
 import se.nimsa.dcm4che.streams.DicomPartFlow.DicomPart
 
@@ -143,12 +143,13 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+
   "The DICOM blacklist filter" should "filter elements matching the blacklist condition" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ studyDate
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag) , true))
+      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), applyToFmi = true))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -159,11 +160,11 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
 
   "The DICOM whitelist filter" should "filter elements not matching the whitelist condition" in {
-    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE  ++ patientNameJohnDoe ++ studyDate
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8 , true))
+      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8, applyToFmi = true))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -172,6 +173,81 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectDicomComplete()
+  }
+
+  "The transform flow" should "transform the value of the specified attributes" in {
+    val bytes = patientNameJohnDoe ++ studyDate
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(attributesTransformFlow((Tag.PatientName, _ => mikeBytes), (Tag.StudyDate, _ => ByteString.empty)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk(mikeBytes)
+      .expectHeader(Tag.StudyDate, VR.DA, 0)
+      .expectValueChunk(ByteString.empty)
+      .expectDicomComplete()
+  }
+
+  it should "transform attributes in sequences" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(attributesTransformFlow((Tag.PatientName, _ => mikeBytes)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem()
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk(mikeBytes)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
+  "The deflate flow" should "recreate the dicom parts of a dataset which has been deflated and inflated again" in {
+    val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(deflateDatasetFlow())
+      .via(attributesTransformFlow((Tag.TransferSyntaxUID, _ => ByteString('1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', '.', '9', '9'))))
+      .map(_.bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "not deflate meta information" in {
+    val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(deflateDatasetFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectDeflatedChunk()
   }
 
 }

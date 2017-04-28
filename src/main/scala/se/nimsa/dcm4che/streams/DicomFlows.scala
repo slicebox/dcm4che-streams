@@ -16,8 +16,10 @@
 
 package se.nimsa.dcm4che.streams
 
+import java.util.zip.Deflater
+
 import akka.NotUsed
-import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
 
 /**
@@ -38,7 +40,6 @@ object DicomFlows {
   }
 
   case class ValidationContext(sopClassUID: String, transferSyntax: String)
-
 
 
   /**
@@ -108,22 +109,25 @@ object DicomFlows {
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
     * file meta information group length, will be discarded.
+    *
     * @return the associated filter Flow
     */
-  def groupLengthDiscardFilter = blacklistFilter(DicomParsing.isGroupLength(_), applyToFmi = false)
+  def groupLengthDiscardFilter = blacklistFilter(DicomParsing.isGroupLength)
 
   /**
     * Blacklist filter for DICOM parts.
+    *
     * @param tagCondition blacklist condition
-    * @param applyToFmi if false, this filter does not affect the FMI
+    * @param applyToFmi   if false, this filter does not affect the FMI
     * @return Flow of filtered parts
     */
   def blacklistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = false)
 
   /**
     * Whitelist filter for DICOM parts.
+    *
     * @param tagCondition whitelist condition
-    * @param applyToFmi if false, this filter does not affect the FMI
+    * @param applyToFmi   if false, this filter does not affect the FMI
     * @return Flow  of filtered parts
     */
   def whitelistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = true)
@@ -136,7 +140,7 @@ object DicomFlows {
       def shouldDiscard(tag: Int, isFmi: Boolean, applyToFmi: Boolean, isWhitelist: Boolean) = {
         if (isWhitelist) {
           // Whitelist: condition true or not appply to fmi => discard = false
-          !((tagCondition(tag) || isFmi && !applyToFmi))
+          !(tagCondition(tag) || isFmi && !applyToFmi)
         } else {
           // Blacklist: condition true or condition true and apply to fmi => discard
           if (tagCondition(tag)) {
@@ -163,7 +167,7 @@ object DicomFlows {
       case fragment: DicomFragment => if (discarding) Nil else fragment :: Nil
 
       case dicomFragments: DicomFragments =>
-        discarding = shouldDiscard(dicomFragments.tag, false, applyToFmi, isWhitelist)
+        discarding = shouldDiscard(dicomFragments.tag, isFmi = false, applyToFmi = applyToFmi, isWhitelist = isWhitelist)
         if (discarding) {
           Nil
         } else {
@@ -176,7 +180,7 @@ object DicomFlows {
         discarding = false
         Nil
 
-      case dicomAttribute: DicomAttribute  =>
+      case dicomAttribute: DicomAttribute =>
         discarding = shouldDiscard(dicomAttribute.header.tag, dicomAttribute.header.isFmi, applyToFmi, isWhitelist)
         if (discarding) {
           Nil
@@ -202,5 +206,121 @@ object DicomFlows {
     */
   def validateFlowWithContext(contexts: Seq[ValidationContext]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 
+  /**
+    * Simple transformation flow for mapping the values of certain attributes to new values. The application is "flat"
+    * in the sense that attributes are transformed no matter if they are part of sequences or not.
+    *
+    * @param transforms Each transform is a 2-tuple of tag number and value transform
+    * @return the transformed flow of DICOM parts
+    */
+  def attributesTransformFlow(transforms: (Int, ByteString => ByteString)*) = Flow[DicomPart].statefulMapConcat {
+    () =>
+      val tags = transforms.map(_._1)
+      var value = ByteString.empty
+      var headerMaybe: Option[DicomHeader] = None
+      var transformMaybe: Option[ByteString => ByteString] = None
+
+      // update header length according to new value
+      def updateHeader(header: DicomHeader, newLength: Int): DicomHeader = {
+        val updatedBytes =
+          if (header.vr.headerLength() == 8)
+            DicomParsing.shortToBytes(newLength, header.bytes, 6, header.bigEndian)
+          else
+            DicomParsing.intToBytes(newLength, header.bytes, 8, header.bigEndian)
+        header.copy(length = newLength, bytes = updatedBytes)
+      }
+
+    {
+      case header: DicomHeader if tags.contains(header.tag) =>
+        headerMaybe = Some(header)
+        value = ByteString.empty
+        transformMaybe = transforms.find(_._1 == header.tag).map(_._2)
+        Nil
+      case chunk: DicomValueChunk if transformMaybe.isDefined && headerMaybe.isDefined =>
+        value = value ++ chunk.bytes
+        if (chunk.last) {
+          val newValue = transformMaybe.map(t => t(value)).getOrElse(value)
+          val newHeader = headerMaybe.map(updateHeader(_, newValue.length)).get
+          transformMaybe = None
+          headerMaybe = None
+          newHeader :: DicomValueChunk(chunk.bigEndian, newValue, last = true) :: Nil
+        } else
+          Nil
+      case dicomPart => dicomPart :: Nil
+    }
+  }
+
+  /**
+    * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in DicomPartFlow
+    * has inflated a deflated (1.2.840.10008.1.2.1.99 or 1.2.840.10008.1.2.4.95) file, and analyzed and possibly transformed its
+    * attributes. At that stage, in order to maintain valid DICOM information, one can either change the transfer syntax to
+    * an appropriate value for non-deflated data, or deflate the data again. This flow helps with the latter.
+    *
+    * @return
+    */
+  def deflateDatasetFlow() = {
+
+    case object DicomEndMarker extends DicomPart {
+      def bigEndian = false
+      def bytes = ByteString.empty
+    }
+
+    Flow[DicomPart]
+      .concat(Source.single(DicomEndMarker))
+      .statefulMapConcat {
+        () =>
+          var inFmi = false
+          val buffer = new Array[Byte](2048)
+          val deflater = new Deflater(-1, true)
+
+          def deflate(dicomPart: DicomPart) = {
+            val input = dicomPart.bytes
+            deflater.setInput(input.toArray)
+            var output = ByteString.empty
+            while (!deflater.needsInput) {
+              val bytesDeflated = deflater.deflate(buffer)
+              output = output ++ ByteString(buffer.take(bytesDeflated))
+            }
+            if (output.isEmpty) Nil else DicomDeflatedChunk(dicomPart.bigEndian, output) :: Nil
+          }
+
+          def finishDeflating() = {
+            deflater.finish()
+            var output = ByteString.empty
+            var done = false
+            while (!done) {
+              val bytesDeflated = deflater.deflate(buffer)
+              if (bytesDeflated == 0)
+                done = true
+              else
+                output = output ++ ByteString(buffer.take(bytesDeflated))
+            }
+            deflater.end()
+            if (output.isEmpty) Nil else DicomDeflatedChunk(bigEndian = false, output) :: Nil
+          }
+
+        {
+          case preamble: DicomPreamble => // preamble, do not deflate
+            preamble :: Nil
+          case DicomEndMarker => // end of stream, make sure deflater writes final bytes
+            finishDeflating()
+          case deflatedChunk: DicomDeflatedChunk => // already deflated, pass as-is
+            deflatedChunk :: Nil
+          case header: DicomHeader if header.isFmi => // FMI, do not deflate and remember we are in FMI
+            inFmi = true
+            header :: Nil
+          case attribute: DicomAttribute if attribute.header.isFmi => // Whole FMI attribute, same as above
+            inFmi = true
+            attribute :: Nil
+          case header: DicomHeader => // Dataset header, remember we are no longer in FMI, deflate
+            inFmi = false
+            deflate(header)
+          case dicomPart if inFmi => // For any dicom part within FMI, do not deflate
+            dicomPart :: Nil
+          case dicomPart => // For all other cases, deflate
+            deflate(dicomPart)
+        }
+      }
+  }
 
 }

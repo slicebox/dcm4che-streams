@@ -118,7 +118,7 @@ trait DicomParsing {
   def readHeaderExplicitVR(buffer: ByteString, assumeBigEndian: Boolean): Option[(Int, VR, Int, Int)] = {
     if (buffer.size >= 8) {
       val tagVr = buffer.take(8)
-      val (tag, vr) = DicomParsing.tagVr(tagVr, assumeBigEndian, true)
+      val (tag, vr) = DicomParsing.tagVr(tagVr, assumeBigEndian, explicitVr = true)
       if (vr == null) {
         // special case: sequences, length might be undefined '0xFFFFFFFF'
         val valueLength = bytesToInt(tagVr, 4, assumeBigEndian)
@@ -217,6 +217,13 @@ trait DicomParsing {
   def bytesToIntBE(bytes: ByteString, off: Int) = (bytes(off) << 24) + ((bytes(off + 1) & 255) << 16) + ((bytes(off + 2) & 255) << 8) + (bytes(off + 3) & 255)
   def bytesToIntLE(bytes: ByteString, off: Int) = (bytes(off + 3) << 24) + ((bytes(off + 2) & 255) << 16) + ((bytes(off + 1) & 255) << 8) + (bytes(off) & 255)
   def asUnsignedInt(value: Int) : Long = value & 0x00000000ffffffffL
+  def shortToBytes(i: Int, bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) shortToBytesBE(i, bytes, off) else shortToBytesLE(i, bytes, off)
+  def shortToBytesBE(i: Int, bytes: ByteString, off: Int) = bytes.updated(off, (i >> 8).toByte).updated(off + 1, i.toByte)
+  def shortToBytesLE(i: Int, bytes: ByteString, off: Int) = bytes.updated(off + 1, (i >> 8).toByte).updated(off, i.toByte)
+  def intToBytes(i: Int, bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) intToBytesBE(i, bytes, off) else intToBytesLE(i, bytes, off)
+  def intToBytesBE(i: Int, bytes: ByteString, off: Int) = bytes.updated(off, (i >> 24).toByte).updated(off + 1, (i >> 16).toByte).updated(off + 2, (i >> 8).toByte).updated(off + 3, i.toByte)
+  def intToBytesLE(i: Int, bytes: ByteString, off: Int) = bytes.updated(off + 3, (i >> 24).toByte).updated(off + 2, (i >> 16).toByte).updated(off + 1, (i >> 8).toByte).updated(off, i.toByte)
+
 }
 
 object DicomParsing extends DicomParsing
