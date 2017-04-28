@@ -219,7 +219,9 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
       .via(deflateDatasetFlow())
-      .via(attributesTransformFlow((Tag.TransferSyntaxUID, _ => ByteString('1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', '.', '9', '9'))))
+      .via(attributesTransformFlow(
+        (Tag.FileMetaInformationGroupLength, _ => fmiGroupLength(tsuidDeflatedExplicitLE)),
+        (Tag.TransferSyntaxUID, _ => ByteString('1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', '.', '9', '9'))))
       .map(_.bytes)
       .via(new DicomPartFlow())
 
