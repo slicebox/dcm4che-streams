@@ -224,9 +224,9 @@ object DicomFlows {
       def updateHeader(header: DicomHeader, newLength: Int): DicomHeader = {
         val updatedBytes =
           if (header.vr.headerLength() == 8)
-            DicomParsing.shortToBytes(newLength, header.bytes, 6, header.bigEndian)
+            header.bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, header.bigEndian)
           else
-            DicomParsing.intToBytes(newLength, header.bytes, 8, header.bigEndian)
+            header.bytes.take(8) ++ DicomParsing.intToBytes(newLength, header.bigEndian)
         header.copy(length = newLength, bytes = updatedBytes)
       }
 
