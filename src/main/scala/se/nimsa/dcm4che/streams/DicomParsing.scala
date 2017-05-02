@@ -188,6 +188,7 @@ trait DicomParsing {
   }
   def isSequenceDelimiter(tag: Int) = groupNumber(tag) == 0xFFFE
   def isFileMetaInformation(tag: Int) = (tag & 0xFFFF0000) == 0x00020000
+  def isPrivateAttribute(tag: Int) = groupNumber(tag) % 2 == 1
 
   def isGroupLength(tag: Int) = elementNumber(tag) == 0
 

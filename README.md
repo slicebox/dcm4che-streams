@@ -17,8 +17,8 @@ DICOM data chunk size and network utilization using back-pressure as specified i
 
 ### Usage
 
-The following example reads a DICOM file from disk, validates that it is a DICOM file, discards all attributes but
-PatientName and PatientID and writes it to a new file.
+The following example reads a DICOM file from disk, validates that it is a DICOM file, discards all private attributes
+and writes it to a new file.
 
 ```scala
 import akka.stream.scaladsl.FileIO
@@ -30,12 +30,32 @@ import se.nimsa.dcm4che.streams.DicomPartFlow._
 FileIO.fromPath(Paths.get("source-file.dcm"))
   .via(validateFlow)
   .via(partFlow)
-  .via(partFilter(Seq(Tag.PatientName, Tag.PatientID)))
+  .via(blacklistFilter(DicomParsing.isPrivateAttribute(_)))
   .map(_.bytes)
   .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
 ```
 
+Same result can be achieved with a whitelist filter instead, but we need to tell the filter
+to keep the preamble:
+
+```scala
+import akka.stream.scaladsl.FileIO
+import java.nio.file.Paths
+import org.dcm4che3.data.Tag
+import se.nimsa.dcm4che.streams.DicomFlows._
+import se.nimsa.dcm4che.streams.DicomPartFlow._
+
+FileIO.fromPath(Paths.get("source-file.dcm"))
+  .via(validateFlow)
+  .via(partFlow)
+  .via(whitelistFilter(!DicomParsing.isPrivateAttribute(_), keepPreamble = true))
+  .map(_.bytes)
+  .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
+```
+
+
 The next example materializes the above stream as dcm4che `Attributes` objects instead of writing data to disk.
+
 
 ```scala
 import akka.stream.scaladsl.FileIO
@@ -50,7 +70,7 @@ val futureAttributes: Future[(Option[Attributes], Option[Attributes])] =
   FileIO.fromPath(Paths.get("source-file.dcm"))
     .via(validateFlow)
     .via(partFlow)
-    .via(partFilter(Seq(Tag.PatientName, Tag.PatientID)))
+    .via(whitelistFilter(Seq(Tag.PatientName, Tag.PatientID)))
     .via(attributeFlow) // must turn headers + chunks into complete attributes before materializing
     .runWith(attributesSink)
     

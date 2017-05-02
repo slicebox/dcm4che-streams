@@ -96,64 +96,65 @@ object DicomFlows {
 
   /**
     * Filter a stream of dicom parts such that all attributes except those with tags in the white list are discarded.
-    * Applies to headers and subsequent value chunks, DicomAttribute:s (as produced by the associated flow) and
-    * fragments. Sequences, items, preamble, deflated chunks and unknown parts are not affected.
     *
-    * @param tagsWhitelist list of tags to keep
-    * @param applyToFmi    if false, this filter does not affect the FMI
+    * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def partFilter(tagsWhitelist: Seq[Int], applyToFmi: Boolean = false) = whitelistFilter(tagsWhitelist.contains(_), applyToFmi)
+  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains(_))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
-    * file meta information group length, will be discarded.
+    * file meta information group length, will be discarded. Group Length (gggg,0000) Standard Data Elements
+    * have been retired in the standard.
     * @return the associated filter Flow
     */
-  def groupLengthDiscardFilter = blacklistFilter(DicomParsing.isGroupLength(_), applyToFmi = false)
+  def groupLengthDiscardFilter = blacklistFilter((tag: Int) => DicomParsing.isGroupLength(tag) && !DicomParsing.isFileMetaInformation(tag))
+
+  /**
+    * Discards the file meta information.
+    * @return the associated filter Flow
+    */
+  def fmiDiscardFilter = blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), keepPreamble = false)
 
   /**
     * Blacklist filter for DICOM parts.
-    * @param tagCondition blacklist condition
-    * @param applyToFmi if false, this filter does not affect the FMI
+    * @param tagCondition blacklist tag condition
+    * @param keepPreamble true if preamble should be kept, else false
     * @return Flow of filtered parts
     */
-  def blacklistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = false)
+  def blacklistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = true) = tagFilter(tagCondition, isWhitelist = false, keepPreamble)
 
   /**
-    * Whitelist filter for DICOM parts.
+    * Tag based whitelist filter for DICOM parts.
     * @param tagCondition whitelist condition
-    * @param applyToFmi if false, this filter does not affect the FMI
+    * @param keepPreamble true if preamble should be kept, else false
     * @return Flow  of filtered parts
     */
-  def whitelistFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean = false) = tagFilter(tagCondition, applyToFmi, isWhitelist = true)
+  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false):  Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
 
 
-  private def tagFilter(tagCondition: (Int) => Boolean, applyToFmi: Boolean, isWhitelist: Boolean) = Flow[DicomPart].statefulMapConcat {
+  private def tagFilter(tagCondition: (Int) => Boolean, isWhitelist: Boolean, keepPreamble: Boolean) = Flow[DicomPart].statefulMapConcat {
     () =>
       var discarding = false
 
-      def shouldDiscard(tag: Int, isFmi: Boolean, applyToFmi: Boolean, isWhitelist: Boolean) = {
+      def shouldDiscard(tag: Int, isWhitelist: Boolean) = {
         if (isWhitelist) {
-          // Whitelist: condition true or not appply to fmi => discard = false
-          !((tagCondition(tag) || isFmi && !applyToFmi))
+          !tagCondition(tag) // Whitelist: condition true => keep
         } else {
-          // Blacklist: condition true or condition true and apply to fmi => discard
-          if (tagCondition(tag)) {
-            if (isFmi) {
-              applyToFmi
-            } else {
-              true
-            }
-          } else {
-            false
-          }
+          tagCondition(tag) // Blacklist: condition true => discard
         }
       }
 
     {
+      case dicomPreamble: DicomPreamble =>
+        if (keepPreamble) {
+          dicomPreamble :: Nil
+        } else {
+          Nil
+        }
+
       case dicomHeader: DicomHeader =>
-        discarding = shouldDiscard(dicomHeader.tag, dicomHeader.isFmi, applyToFmi, isWhitelist)
+        discarding = shouldDiscard(dicomHeader.tag, isWhitelist)
         if (discarding) {
           Nil
         } else {
@@ -163,7 +164,7 @@ object DicomFlows {
       case fragment: DicomFragment => if (discarding) Nil else fragment :: Nil
 
       case dicomFragments: DicomFragments =>
-        discarding = shouldDiscard(dicomFragments.tag, false, applyToFmi, isWhitelist)
+        discarding = shouldDiscard(dicomFragments.tag, isWhitelist)
         if (discarding) {
           Nil
         } else {
@@ -172,12 +173,13 @@ object DicomFlows {
 
       case _: DicomItem if discarding => Nil
       case _: DicomItemDelimitation if discarding => Nil
-      case _: DicomFragmentsDelimitation if discarding =>
-        discarding = false
-        Nil
+      case _: DicomFragmentsDelimitation if discarding => Nil
+
+      case _: DicomSequence if discarding => Nil
+      case _: DicomSequenceDelimitation  if discarding => Nil
 
       case dicomAttribute: DicomAttribute  =>
-        discarding = shouldDiscard(dicomAttribute.header.tag, dicomAttribute.header.isFmi, applyToFmi, isWhitelist)
+        discarding = shouldDiscard(dicomAttribute.header.tag, isWhitelist)
         if (discarding) {
           Nil
         } else {
@@ -185,10 +187,15 @@ object DicomFlows {
         }
 
       case dicomPart =>
-        discarding = false
-        dicomPart :: Nil
+        if (isWhitelist) {
+          Nil
+        } else {
+          discarding = false
+          dicomPart :: Nil
+        }
     }
   }
+
 
   /**
     * A flow which passes on the input bytes unchanged, but fails for non-DICOM files, determined by the first

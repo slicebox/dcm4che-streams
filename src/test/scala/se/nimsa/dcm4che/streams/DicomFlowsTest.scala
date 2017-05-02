@@ -1,14 +1,17 @@
 package se.nimsa.dcm4che.streams
 
+import java.io.File
+
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{FileIO, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.Tag
 import org.scalatest.{FlatSpecLike, Matchers}
 import se.nimsa.dcm4che.streams.DicomPartFlow.DicomPart
+
 
 class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers {
 
@@ -69,14 +72,9 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectPreamble()
-      .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk()
-      .expectHeader(Tag.TransferSyntaxUID)
-      .expectValueChunk()
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectDicomComplete()
@@ -87,10 +85,9 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate), applyToFmi = true))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectPreamble()
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectDicomComplete()
@@ -101,15 +98,11 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem()
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
-      .expectItemDelimitation()
-      .expectSequenceDelimitation()
       .expectDicomComplete()
   }
 
@@ -118,7 +111,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq.empty))
+      .via(whitelistFilter(Seq.empty))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomComplete()
@@ -143,18 +136,87 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+  it should "discard group length elements except 0002,0000 when testing with dicom file" in {
+    val file = new File(getClass.getResource("CT0055.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(DicomPartFlow.partFlow)
+      .via(groupLengthDiscardFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.FileMetaInformationVersion)
+      .expectValueChunk()
+  }
+
+  "The DICOM file meta information discard filter" should "discard file meta informaton" in {
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(fmiDiscardFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "discard file meta information when testing with dicom files" in {
+    val file = new File(getClass.getResource("CT0055.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(DicomPartFlow.partFlow)
+      .via(fmiDiscardFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.SpecificCharacterSet)
+      .expectValueChunk()
+      .expectHeader(Tag.ImageType)
+  }
+
+
   "The DICOM blacklist filter" should "filter elements matching the blacklist condition" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ studyDate
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag) , true))
+      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), keepPreamble = false))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectPreamble()
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectDicomComplete()
+  }
+
+  it should "filter elements matching the blacklist condition when testing with sample dicom files" in {
+    val file = new File(getClass.getResource("CT0055.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(new DicomPartFlow())
+      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag) , keepPreamble = false))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.SpecificCharacterSet)
+      .expectValueChunk()
+      .expectHeader(Tag.ImageType)
+  }
+
+
+  it should "filter leave the dicom file unchanged when blacklist condition does not match any attribute" in {
+    val file = new File(getClass.getResource("CT0055.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(new DicomPartFlow())
+      .via(blacklistFilter(DicomParsing.isPrivateAttribute(_)))
+    .via(printFlow[DicomPart])
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.FileMetaInformationVersion)
+      .expectValueChunk()
   }
 
 
@@ -163,13 +225,25 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8 , true))
+      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectPreamble()
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "filter elements not matching the whitelist condition when testing with sample dicom files" in {
+    val file = new File(getClass.getResource("CT0055.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(DicomPartFlow.partFlow)
+      .via(whitelistFilter(_ == Tag.PatientName))
+      .via(printFlow[DicomPart])
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectDicomComplete()
   }
