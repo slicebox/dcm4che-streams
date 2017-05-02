@@ -100,11 +100,12 @@ object DicomFlows {
     * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def partFilter(tagsWhitelist: Seq[Int]) = whitelistFilter(tagsWhitelist.contains(_))
+  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains(_))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
-    * file meta information group length, will be discarded.
+    * file meta information group length, will be discarded. Group Length (gggg,0000) Standard Data Elements
+    * have been retired in the standard.
     * @return the associated filter Flow
     */
   def groupLengthDiscardFilter = blacklistFilter((tag: Int) => DicomParsing.isGroupLength(tag) && !DicomParsing.isFileMetaInformation(tag))
@@ -129,7 +130,7 @@ object DicomFlows {
     * @param keepPreamble true if preamble should be kept, else false
     * @return Flow  of filtered parts
     */
-  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false) = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
+  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false):  Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
 
 
   private def tagFilter(tagCondition: (Int) => Boolean, isWhitelist: Boolean, keepPreamble: Boolean) = Flow[DicomPart].statefulMapConcat {
@@ -185,9 +186,13 @@ object DicomFlows {
           dicomAttribute :: Nil
         }
 
-      case dicomPart => // FIXME: Unknown part?
-        discarding = false
-        dicomPart :: Nil
+      case dicomPart =>
+        if (isWhitelist) {
+          Nil
+        } else {
+          discarding = false
+          dicomPart :: Nil
+        }
     }
   }
 

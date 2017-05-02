@@ -72,7 +72,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -85,7 +85,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -98,15 +98,11 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem()
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
-      .expectItemDelimitation()
-      .expectSequenceDelimitation()
       .expectDicomComplete()
   }
 
@@ -115,7 +111,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(partFilter(Seq.empty))
+      .via(whitelistFilter(Seq.empty))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomComplete()

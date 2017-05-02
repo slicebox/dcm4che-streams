@@ -55,7 +55,7 @@ FileIO.fromPath(Paths.get("source-file.dcm"))
 
 
 The next example materializes the above stream as dcm4che `Attributes` objects instead of writing data to disk.
-`partFilter` is a convenient way to specify a whitelist by specifying a sequence of tags that are whitelisted.
+
 
 ```scala
 import akka.stream.scaladsl.FileIO
@@ -70,7 +70,7 @@ val futureAttributes: Future[(Option[Attributes], Option[Attributes])] =
   FileIO.fromPath(Paths.get("source-file.dcm"))
     .via(validateFlow)
     .via(partFlow)
-    .via(partFilter(Seq(Tag.PatientName, Tag.PatientID)))
+    .via(whitelistFilter(Seq(Tag.PatientName, Tag.PatientID)))
     .via(attributeFlow) // must turn headers + chunks into complete attributes before materializing
     .runWith(attributesSink)
     
