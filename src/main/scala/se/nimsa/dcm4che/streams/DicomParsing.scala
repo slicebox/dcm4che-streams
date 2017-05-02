@@ -17,10 +17,9 @@
 package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
+import org.dcm4che3.data.UID._
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
-import org.dcm4che3.data.UID._
-import org.dcm4che3.data.Tag._
 
 /**
   * Helper methods for parsing binary DICOM data.
@@ -32,6 +31,7 @@ trait DicomParsing {
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
     /**
       * Best guess for transfer syntax.
+      *
       * @return transfer syntax uid value
       */
     def assumedTransferSyntax = if (explicitVR) {
@@ -44,6 +44,7 @@ trait DicomParsing {
       ImplicitVRLittleEndian
     }
   }
+
   case class Attribute(tag: Int, vr: VR, length: Int, value: ByteString)
 
   def dicomInfo(data: ByteString): Option[Info] =
@@ -51,17 +52,17 @@ trait DicomParsing {
       .orElse(dicomInfo(data, assumeBigEndian = true))
 
   private def dicomInfo(data: ByteString, assumeBigEndian: Boolean): Option[Info] = {
-    val tag1 = bytesToTag(data, 0, assumeBigEndian)
+    val tag1 = bytesToTag(data, assumeBigEndian)
     val vr = ElementDictionary.vrOf(tag1, null)
     if (vr == VR.UN)
       None
     else {
-      if (bytesToVR(data, 4) == vr.code)
+      if (bytesToVR(data.drop(4)) == vr.code)
         Some(Info(
           bigEndian = assumeBigEndian,
           explicitVR = true,
           hasFmi = isFileMetaInformation(tag1)))
-      else if (bytesToInt(data, 4, assumeBigEndian) >= 0)
+      else if (bytesToInt(data.drop(4), assumeBigEndian) >= 0)
         if (assumeBigEndian)
           throw new DicomStreamException("Implicit VR Big Endian encoded DICOM Stream")
         else
@@ -111,28 +112,28 @@ trait DicomParsing {
 
   /**
     * Read header of data element for explicit VR
-    * @param buffer current buffer
+    *
+    * @param buffer          current buffer
     * @param assumeBigEndian true if big endian, false otherwise
     * @return
     */
   def readHeaderExplicitVR(buffer: ByteString, assumeBigEndian: Boolean): Option[(Int, VR, Int, Int)] = {
     if (buffer.size >= 8) {
-      val tagVr = buffer.take(8)
-      val (tag, vr) = DicomParsing.tagVr(tagVr, assumeBigEndian, true)
+      val (tag, vr) = DicomParsing.tagVr(buffer, assumeBigEndian, explicitVr = true)
       if (vr == null) {
         // special case: sequences, length might be undefined '0xFFFFFFFF'
-        val valueLength = bytesToInt(tagVr, 4, assumeBigEndian)
+        val valueLength = bytesToInt(buffer.drop(4), assumeBigEndian)
         if (valueLength == -1) {
           // length of sequence undefined, not supported
           None
         } else {
-          Some((tag, vr, 8, bytesToInt(tagVr, 4, assumeBigEndian)))
+          Some((tag, vr, 8, bytesToInt(buffer.drop(4), assumeBigEndian)))
         }
       } else if (vr.headerLength == 8) {
-        Some((tag, vr, 8, bytesToUShort(tagVr, 6, assumeBigEndian)))
+        Some((tag, vr, 8, bytesToUShort(buffer.drop(6), assumeBigEndian)))
       } else {
         if (buffer.size >= 12) {
-          Some((tag, vr, 12, bytesToInt(buffer, 8, assumeBigEndian)))
+          Some((tag, vr, 12, bytesToInt(buffer.drop(8), assumeBigEndian)))
         } else {
           None
         }
@@ -144,45 +145,34 @@ trait DicomParsing {
 
   /**
     * Read header of data element for implicit VR, handles special case for FileMetaInformationVersion.
+    *
     * @param buffer current buffer
     * @return
     */
-  def readHeaderImplicitVR(buffer: ByteString): Option[(Int, VR, Int, Int)] = {
-    val assumeBigEndian = false // implicit VR
+  def readHeaderImplicitVR(buffer: ByteString): Option[(Int, VR, Int, Int)] =
     if (buffer.size >= 8) {
-      val tag = DicomParsing.bytesToTag(buffer, 0, assumeBigEndian)
+      val assumeBigEndian = false // implicit VR
+      val tag = DicomParsing.bytesToTag(buffer, assumeBigEndian)
       val vr = ElementDictionary.getStandardElementDictionary.vrOf(tag)
-      if ((vr == VR.OB) && (tag == FileMetaInformationVersion)) {
-        Some((tag, vr, 8, bytesToInt(buffer, 4, assumeBigEndian)))
-      } else if (vr.headerLength == 8) {
-        val valueLength = bytesToInt(buffer, 4, assumeBigEndian)
-        if ((tag == 0xFFFEE000 || tag == 0xFFFEE00D || tag == 0xFFFEE0DD) && valueLength == -1) {
-          // special case: sequences, with undefined length '0xFFFFFFFF' not supported
-          None
-        } else {
-          Some((tag, vr, 8, valueLength))
-        }
-      } else {
-        if (buffer.size >= 12) {
-          Some((tag, vr, 12, bytesToInt(buffer, 8, assumeBigEndian)))
-        } else {
-          None
-        }
-      }
-    } else {
+      val valueLength = bytesToInt(buffer.drop(4), assumeBigEndian)
+      if (tag == 0xFFFEE000 || tag == 0xFFFEE00D || tag == 0xFFFEE0DD)
+        if (valueLength == -1)
+          None // special case: sequences, with undefined length '0xFFFFFFFF' not supported
+        else
+          Some((tag, null, 8, valueLength))
+      else
+        Some((tag, vr, 8, valueLength))
+    } else
       None
-    }
-  }
-
 
   def isPreamble(data: ByteString): Boolean = data.slice(128, 132) == ByteString('D', 'I', 'C', 'M')
 
   def tagVr(data: ByteString, bigEndian: Boolean, explicitVr: Boolean): (Int, VR) = {
-    val tag = bytesToTag(data, 0, bigEndian)
+    val tag = bytesToTag(data, bigEndian)
     if (tag == 0xFFFEE000 || tag == 0xFFFEE00D || tag == 0xFFFEE0DD)
       (tag, null)
     else if (explicitVr)
-      (tag, VR.valueOf(bytesToVR(data, 4)))
+      (tag, VR.valueOf(bytesToVR(data.drop(4))))
     else
       (tag, VR.UN)
   }
@@ -195,29 +185,35 @@ trait DicomParsing {
   def groupNumber(tag: Int) = tag >>> 16
   def elementNumber(tag: Int) = tag & '\uffff'
 
-  def bytesToShort(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToShortBE(bytes, off) else bytesToShortLE(bytes, off)
-  def bytesToShortBE(bytes: ByteString, off: Int) = (bytes(off) << 8) + (bytes(off + 1) & 255)
-  def bytesToShortLE(bytes: ByteString, off: Int) = (bytes(off + 1) << 8) + (bytes(off) & 255)
-  def bytesToLong(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToLongBE(bytes, off) else bytesToLongLE(bytes, off)
-  def bytesToLongBE(bytes: ByteString, off: Int) = (bytes(off).toLong << 56) + ((bytes(off + 1) & 255).toLong << 48) + ((bytes(off + 2) & 255).toLong << 40) + ((bytes(off + 3) & 255).toLong << 32) + ((bytes(off + 4) & 255).toLong << 24) + ((bytes(off + 5) & 255) << 16).toLong + ((bytes(off + 6) & 255) << 8).toLong + (bytes(off + 7) & 255).toLong
-  def bytesToLongLE(bytes: ByteString, off: Int) = (bytes(off + 7).toLong << 56) + ((bytes(off + 6) & 255).toLong << 48) + ((bytes(off + 5) & 255).toLong << 40) + ((bytes(off + 4) & 255).toLong << 32) + ((bytes(off + 3) & 255).toLong << 24) + ((bytes(off + 2) & 255) << 16).toLong + ((bytes(off + 1) & 255) << 8).toLong + (bytes(off) & 255).toLong
-  def bytesToDouble(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToDoubleBE(bytes, off) else bytesToDoubleLE(bytes, off)
-  def bytesToDoubleBE(bytes: ByteString, off: Int) = java.lang.Double.longBitsToDouble(bytesToLongBE(bytes, off))
-  def bytesToDoubleLE(bytes: ByteString, off: Int) = java.lang.Double.longBitsToDouble(bytesToLongLE(bytes, off))
-  def bytesToFloat(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToFloatBE(bytes, off) else bytesToFloatLE(bytes, off)
-  def bytesToFloatBE(bytes: ByteString, off: Int) = java.lang.Float.intBitsToFloat(bytesToIntBE(bytes, off))
-  def bytesToFloatLE(bytes: ByteString, off: Int) = java.lang.Float.intBitsToFloat(bytesToIntLE(bytes, off))
-  def bytesToUShort(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToUShortBE(bytes, off) else bytesToUShortLE(bytes, off)
-  def bytesToUShortBE(bytes: ByteString, off: Int) = ((bytes(off) & 255) << 8) + (bytes(off + 1) & 255)
-  def bytesToUShortLE(bytes: ByteString, off: Int) = ((bytes(off + 1) & 255) << 8) + (bytes(off) & 255)
-  def bytesToTag(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToTagBE(bytes, off) else bytesToTagLE(bytes, off)
-  def bytesToTagBE(bytes: ByteString, off: Int) = bytesToIntBE(bytes, off)
-  def bytesToTagLE(bytes: ByteString, off: Int) = (bytes(off + 1) << 24) + ((bytes(off) & 255) << 16) + ((bytes(off + 3) & 255) << 8) + (bytes(off + 2) & 255)
-  def bytesToVR(bytes: ByteString, off: Int) = bytesToUShortBE(bytes, off)
-  def bytesToInt(bytes: ByteString, off: Int, bigEndian: Boolean) = if (bigEndian) bytesToIntBE(bytes, off) else bytesToIntLE(bytes, off)
-  def bytesToIntBE(bytes: ByteString, off: Int) = (bytes(off) << 24) + ((bytes(off + 1) & 255) << 16) + ((bytes(off + 2) & 255) << 8) + (bytes(off + 3) & 255)
-  def bytesToIntLE(bytes: ByteString, off: Int) = (bytes(off + 3) << 24) + ((bytes(off + 2) & 255) << 16) + ((bytes(off + 1) & 255) << 8) + (bytes(off) & 255)
-  def asUnsignedInt(value: Int) : Long = value & 0x00000000ffffffffL
+  def bytesToShort(bytes: ByteString, bigEndian: Boolean): Short = if (bigEndian) bytesToShortBE(bytes) else bytesToShortLE(bytes)
+  def bytesToShortBE(bytes: ByteString): Short = ((bytes(0) << 8) + (bytes(1) & 255)).toShort
+  def bytesToShortLE(bytes: ByteString): Short = ((bytes(1) << 8) + (bytes(0) & 255)).toShort
+  def bytesToLong(bytes: ByteString, bigEndian: Boolean): Long = if (bigEndian) bytesToLongBE(bytes) else bytesToLongLE(bytes)
+  def bytesToLongBE(bytes: ByteString): Long = (bytes(0).toLong << 56) + ((bytes(1) & 255).toLong << 48) + ((bytes(2) & 255).toLong << 40) + ((bytes(3) & 255).toLong << 32) + ((bytes(4) & 255).toLong << 24) + ((bytes(5) & 255) << 16).toLong + ((bytes(6) & 255) << 8).toLong + (bytes(7) & 255).toLong
+  def bytesToLongLE(bytes: ByteString): Long = (bytes(7).toLong << 56) + ((bytes(6) & 255).toLong << 48) + ((bytes(5) & 255).toLong << 40) + ((bytes(4) & 255).toLong << 32) + ((bytes(3) & 255).toLong << 24) + ((bytes(2) & 255) << 16).toLong + ((bytes(1) & 255) << 8).toLong + (bytes(0) & 255).toLong
+  def bytesToDouble(bytes: ByteString, bigEndian: Boolean): Double = if (bigEndian) bytesToDoubleBE(bytes) else bytesToDoubleLE(bytes)
+  def bytesToDoubleBE(bytes: ByteString): Double = java.lang.Double.longBitsToDouble(bytesToLongBE(bytes))
+  def bytesToDoubleLE(bytes: ByteString): Double = java.lang.Double.longBitsToDouble(bytesToLongLE(bytes))
+  def bytesToFloat(bytes: ByteString, bigEndian: Boolean): Float = if (bigEndian) bytesToFloatBE(bytes) else bytesToFloatLE(bytes)
+  def bytesToFloatBE(bytes: ByteString): Float = java.lang.Float.intBitsToFloat(bytesToIntBE(bytes))
+  def bytesToFloatLE(bytes: ByteString): Float = java.lang.Float.intBitsToFloat(bytesToIntLE(bytes))
+  def bytesToUShort(bytes: ByteString, bigEndian: Boolean): Int = if (bigEndian) bytesToUShortBE(bytes) else bytesToUShortLE(bytes)
+  def bytesToUShortBE(bytes: ByteString): Int = ((bytes(0) & 255) << 8) + (bytes(1) & 255)
+  def bytesToUShortLE(bytes: ByteString): Int = ((bytes(1) & 255) << 8) + (bytes(0) & 255)
+  def bytesToTag(bytes: ByteString, bigEndian: Boolean): Int = if (bigEndian) bytesToTagBE(bytes) else bytesToTagLE(bytes)
+  def bytesToTagBE(bytes: ByteString): Int = bytesToIntBE(bytes)
+  def bytesToTagLE(bytes: ByteString): Int = (bytes(1) << 24) + ((bytes(0) & 255) << 16) + ((bytes(3) & 255) << 8) + (bytes(2) & 255)
+  def bytesToVR(bytes: ByteString): Int = bytesToUShortBE(bytes)
+  def bytesToInt(bytes: ByteString, bigEndian: Boolean): Int = if (bigEndian) bytesToIntBE(bytes) else bytesToIntLE(bytes)
+  def bytesToIntBE(bytes: ByteString): Int = (bytes(0) << 24) + ((bytes(1) & 255) << 16) + ((bytes(2) & 255) << 8) + (bytes(3) & 255)
+  def bytesToIntLE(bytes: ByteString): Int = (bytes(3) << 24) + ((bytes(2) & 255) << 16) + ((bytes(1) & 255) << 8) + (bytes(0) & 255)
+  def shortToBytes(i: Short, bigEndian: Boolean): ByteString = if (bigEndian) shortToBytesBE(i) else shortToBytesLE(i)
+  def shortToBytesBE(i: Short): ByteString = ByteString((i >> 8).toByte, i.toByte)
+  def shortToBytesLE(i: Short): ByteString = ByteString(i.toByte, (i >> 8).toByte)
+  def intToBytes(i: Int, bigEndian: Boolean): ByteString = if (bigEndian) intToBytesBE(i) else intToBytesLE(i)
+  def intToBytesBE(i: Int): ByteString = ByteString((i >> 24).toByte, (i >> 16).toByte, (i >> 8).toByte, i.toByte)
+  def intToBytesLE(i: Int): ByteString = ByteString(i.toByte, (i >> 8).toByte, (i >> 16).toByte, (i >> 24).toByte)
+
 }
 
 object DicomParsing extends DicomParsing

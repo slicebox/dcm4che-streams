@@ -4,6 +4,7 @@ import java.util.zip.Deflater
 
 import akka.stream.testkit.TestSubscriber
 import akka.util.ByteString
+import org.dcm4che3.data.VR
 import se.nimsa.dcm4che.streams.DicomFlows.{DicomAttribute, DicomFragment}
 import se.nimsa.dcm4che.streams.DicomPartFlow._
 
@@ -51,7 +52,7 @@ object DicomData {
   val patientNameJohnDoe = ByteString(16, 0, 16, 0, 80, 78, 8, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
   val patientNameJohnDoeBE = ByteString(0, 16, 0, 16, 80, 78, 0, 8, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
   val patientNameJohnDoeImplicit = ByteString(16, 0, 16, 0, 8, 0, 0, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
-  val studyDate = ByteString(8, 0, 32, 0, 84, 77, 10, 0, 49, 56, 51, 49, 51, 56, 46, 55, 54, 53)
+  val studyDate = ByteString(8, 0, 32, 0, 68, 65, 10, 0, 49, 56, 51, 49, 51, 56, 46, 55, 54, 53)
 
   def itemStart(length: Byte) = ByteString(254, 255, 0, 224, length, 0, 0, 0)
 
@@ -85,6 +86,12 @@ object DicomData {
         case _: DicomValueChunk => true
       }
 
+    def expectValueChunk(bytes: ByteString) = probe
+      .request(1)
+      .expectNextChainingPF {
+        case chunk: DicomValueChunk => chunk.bytes == bytes
+      }
+
     def expectItem() = probe
       .request(1)
       .expectNextChainingPF {
@@ -113,6 +120,12 @@ object DicomData {
       .request(1)
       .expectNextChainingPF {
         case h: DicomHeader if h.tag == tag => true
+      }
+
+    def expectHeader(tag: Int, vr: VR, length: Int) = probe
+      .request(1)
+      .expectNextChainingPF {
+        case h: DicomHeader if h.tag == tag && h.vr == vr && h.length == length => true
       }
 
     def expectSequence(tag: Int) = probe
