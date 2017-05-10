@@ -144,7 +144,7 @@ trait DicomParsing {
   }
 
   /**
-    * Read header of data element for implicit VR, handles special case for FileMetaInformationVersion.
+    * Read header of data element for implicit VR.
     *
     * @param buffer current buffer
     * @return

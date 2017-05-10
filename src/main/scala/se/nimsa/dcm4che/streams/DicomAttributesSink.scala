@@ -18,13 +18,11 @@ package se.nimsa.dcm4che.streams
 
 import akka.stream.scaladsl.Sink
 import org.dcm4che3.data.{Attributes, Fragments, Sequence}
+import se.nimsa.dcm4che.streams.DicomParts._
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object DicomAttributesSink {
-
-  import DicomPartFlow._
-  import DicomFlows._
 
   private case class AttributesData(attributesStack: Seq[Attributes],
                                     sequenceStack: Seq[Sequence],
