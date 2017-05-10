@@ -10,7 +10,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
   "DicomHeader" should "should return a new header with modified length for explicitVR, LE" in {
     val (tag, vr, headerLength, length) = DicomParsing.readHeaderExplicitVR(patientNameJohnDoe, false).get
     val header = DicomHeader(tag, vr, length, false, false, true, patientNameJohnDoe.take(8))
-    val updatedHeader = header.updateLength(5)
+    val updatedHeader = header.withUpdatedLength(5)
 
     updatedHeader.length shouldEqual 5
     updatedHeader.bytes.take(6) shouldEqual header.bytes.take(6)
@@ -21,7 +21,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
   it should "should return a new header with modified length for explicitVR, BE" in {
     val (tag, vr, headerLength, length) = DicomParsing.readHeaderExplicitVR(patientNameJohnDoeBE, true).get
     val header = DicomHeader(tag, vr, length, false, true, true, patientNameJohnDoeBE.take(8))
-    val updatedHeader = header.updateLength(5)
+    val updatedHeader = header.withUpdatedLength(5)
 
     updatedHeader.length shouldEqual 5
     updatedHeader.bytes.take(6) shouldEqual header.bytes.take(6)
@@ -32,7 +32,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
   it should "should return a new header with modified length for implicitVR, LE" in {
     val (tag, vr, headerLength, length) = DicomParsing.readHeaderImplicitVR(patientNameJohnDoeImplicit).get
     val header = DicomHeader(tag, vr, length, false, false, false, patientNameJohnDoeImplicit.take(8))
-    val updatedHeader = header.updateLength(5)
+    val updatedHeader = header.withUpdatedLength(5)
 
     updatedHeader.length shouldEqual 5
     updatedHeader.bytes.take(4) shouldEqual header.bytes.take(4)
@@ -46,7 +46,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val header = DicomHeader(tag, vr, length, false, false, true, patientNameJohnDoe.take(8))
     val value = DicomValueChunk(false, patientNameJohnDoe.drop(8) ,true)
     val attribute = DicomAttribute(header, Seq(value))
-    val updatedAttribute = attribute.updateStringValue("Jimmyboy^Doe")
+    val updatedAttribute = attribute.withUpdatedStringValue("Jimmyboy^Doe")
     updatedAttribute.bytes.size shouldEqual 12
     updatedAttribute.header.length shouldEqual 12
   }
@@ -56,7 +56,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val header = DicomHeader(tag, vr, length, false, false, true, patientNameJohnDoe.take(8))
     val value = DicomValueChunk(false, patientNameJohnDoe.drop(8) ,true)
     val attribute = DicomAttribute(header, Seq(value))
-    val updatedAttribute = attribute.updateStringValue("Jimmy^Doe")
+    val updatedAttribute = attribute.withUpdatedStringValue("Jimmy^Doe")
 
     updatedAttribute.bytes.size shouldEqual 10
     updatedAttribute.header.length shouldEqual 10

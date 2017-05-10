@@ -20,6 +20,7 @@ import akka.util.ByteString
 import org.dcm4che3.data.UID._
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
+import org.dcm4che3.util.ByteUtils
 
 /**
   * Helper methods for parsing binary DICOM data.
@@ -213,6 +214,9 @@ trait DicomParsing {
   def intToBytes(i: Int, bigEndian: Boolean): ByteString = if (bigEndian) intToBytesBE(i) else intToBytesLE(i)
   def intToBytesBE(i: Int): ByteString = ByteString((i >> 24).toByte, (i >> 16).toByte, (i >> 8).toByte, i.toByte)
   def intToBytesLE(i: Int): ByteString = ByteString(i.toByte, (i >> 8).toByte, (i >> 16).toByte, (i >> 24).toByte)
+
+
+  def shortToBytes(shortValue: Int, bytes: ByteString, offset: Int, bigEndian: Boolean) = ByteUtils.shortToBytes(shortValue, bytes.toArray, offset, bigEndian)
 
 }
 
