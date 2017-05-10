@@ -213,16 +213,6 @@ object DicomFlows {
       var headerMaybe: Option[DicomHeader] = None
       var transformMaybe: Option[ByteString => ByteString] = None
 
-      // update header length according to new value
-      def updateHeader(header: DicomHeader, newLength: Int): DicomHeader = {
-        val updatedBytes =
-          if (header.vr.headerLength() == 8)
-            header.bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, header.bigEndian)
-          else
-            header.bytes.take(8) ++ DicomParsing.intToBytes(newLength, header.bigEndian)
-        header.copy(length = newLength, bytes = updatedBytes)
-      }
-
     {
       case header: DicomHeader if tags.contains(header.tag) =>
         headerMaybe = Some(header)
@@ -233,7 +223,7 @@ object DicomFlows {
         value = value ++ chunk.bytes
         if (chunk.last) {
           val newValue = transformMaybe.map(t => t(value)).getOrElse(value)
-          val newHeader = headerMaybe.map(updateHeader(_, newValue.length)).get
+          val newHeader = headerMaybe.map(header => header.withUpdatedLength(newValue.length.toShort)).get
           transformMaybe = None
           headerMaybe = None
           newHeader :: DicomValueChunk(chunk.bigEndian, newValue, last = true) :: Nil
