@@ -215,9 +215,6 @@ trait DicomParsing {
   def intToBytesBE(i: Int): ByteString = ByteString((i >> 24).toByte, (i >> 16).toByte, (i >> 8).toByte, i.toByte)
   def intToBytesLE(i: Int): ByteString = ByteString(i.toByte, (i >> 8).toByte, (i >> 16).toByte, (i >> 24).toByte)
 
-
-  def shortToBytes(shortValue: Int, bytes: ByteString, offset: Int, bigEndian: Boolean) = ByteUtils.shortToBytes(shortValue, bytes.toArray, offset, bigEndian)
-
 }
 
 object DicomParsing extends DicomParsing

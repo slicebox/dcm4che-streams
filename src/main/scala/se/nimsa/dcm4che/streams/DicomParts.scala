@@ -18,7 +18,6 @@ package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
 import org.dcm4che3.data.{SpecificCharacterSet, VR}
-import org.dcm4che3.util.ByteUtils
 
 
 object DicomParts {
@@ -35,19 +34,19 @@ object DicomParts {
 
   case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
 
-    def withUpdatedLength(newLength: Int) : DicomHeader = {
+    def withUpdatedLength(newLength: Short) : DicomHeader = {
 
       val updated = if ((bytes.size >= 8) && (explicitVR) && (vr.headerLength == 8)) { //explicit vr
-          DicomParsing.shortToBytes(newLength, bytes, 6, bigEndian)
+          bytes.take(6) ++ DicomParsing.shortToBytes(newLength, bigEndian)
         } else if ((bytes.size >= 12) && (explicitVR) && (vr.headerLength == 12)) { //explicit vr
-          DicomParsing.shortToBytes(newLength, bytes, 8, bigEndian)
+          bytes.take(8) ++ DicomParsing.shortToBytes(newLength, bigEndian)
         } else if ((bytes.size >= 8) && (!explicitVR) && (vr.headerLength == 8)) { //implicit vr
-          DicomParsing.shortToBytes(newLength, bytes, 4, bigEndian)
+          bytes.take(4) ++ DicomParsing.shortToBytes(newLength, bigEndian)
         } else {
-          DicomParsing.shortToBytes(newLength, bytes, 8, bigEndian) //implicit vr
+          bytes.take(8) ++ DicomParsing.shortToBytes(newLength, bigEndian)  //implicit vr
         }
 
-      DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, ByteString.fromArray(updated))
+      DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
     }
 
   }
@@ -87,7 +86,7 @@ object DicomParts {
       val newBytes = header.vr.toBytes(newValue, cs)
       val needsPadding = newBytes.size % 2 == 1
       val newLength = if (needsPadding) newBytes.size + 1 else newBytes.size
-      val updatedHeader = header.withUpdatedLength(newLength)
+      val updatedHeader = header.withUpdatedLength(newLength.toShort)
       val updatedValue = if (needsPadding) {
         ByteString.fromArray(newBytes :+ header.vr.paddingByte().toByte)
       } else {
