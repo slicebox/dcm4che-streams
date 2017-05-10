@@ -19,12 +19,13 @@ package se.nimsa.dcm4che.streams
 import akka.stream.SinkShape
 import akka.stream.scaladsl.{Broadcast, GraphDSL, Sink}
 import akka.util.ByteString
+import se.nimsa.dcm4che.streams.DicomParts.DicomPart
 
 import scala.concurrent.Future
 
 object DicomSinks {
 
-  import DicomFlows.{attributeFlow, partFilter, validateFlow}
+  import DicomFlows.{attributeFlow, whitelistFilter, validateFlow}
   import DicomPartFlow._
 
   def bytesAndAttributesSink[A, B](bytesSink: Sink[ByteString, Future[A]],
@@ -41,7 +42,7 @@ object DicomSinks {
 
           validate.out ~> bcast.in
 
-          bcast.out(0) ~> partFlow ~> partFilter(tagsWhiteList, applyToFmi = true) ~> attributeFlow ~> attributesConsumer
+          bcast.out(0) ~> partFlow ~> whitelistFilter(tagsWhiteList) ~> attributeFlow ~> attributesConsumer
           bcast.out(1) ~> bytesConsumer
 
           SinkShape(validate.in)

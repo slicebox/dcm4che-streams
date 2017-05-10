@@ -114,7 +114,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
             flowDataset.size shouldEqual dataset.size
             flowDataset.tags shouldEqual dataset.tags
             val v1 = flowDataset.getValue(Tag.PixelData)
-            var v2 = dataset.getValue(Tag.PixelData)
+            val v2 = dataset.getValue(Tag.PixelData)
             v1 shouldBe a [Fragments]
             v2 shouldBe a [Fragments]
             val f1 = v1.asInstanceOf[Fragments]
