@@ -40,10 +40,8 @@ object DicomParts {
           bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, bigEndian)
         } else if ((bytes.size >= 12) && (explicitVR) && (vr.headerLength == 12)) { //explicit vr
           bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)
-        } else if ((bytes.size >= 8) && (!explicitVR) && (vr.headerLength == 8)) { //implicit vr
+        } else { //implicit vr
           bytes.take(4) ++ DicomParsing.intToBytes(newLength, bigEndian)
-        } else {
-          bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)  //implicit vr
         }
 
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
