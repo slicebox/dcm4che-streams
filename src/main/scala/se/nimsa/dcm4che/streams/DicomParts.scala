@@ -34,16 +34,16 @@ object DicomParts {
 
   case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
 
-    def withUpdatedLength(newLength: Short) : DicomHeader = {
+    def withUpdatedLength(newLength: Int) : DicomHeader = {
 
       val updated = if ((bytes.size >= 8) && (explicitVR) && (vr.headerLength == 8)) { //explicit vr
-          bytes.take(6) ++ DicomParsing.shortToBytes(newLength, bigEndian)
+          bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, bigEndian)
         } else if ((bytes.size >= 12) && (explicitVR) && (vr.headerLength == 12)) { //explicit vr
-          bytes.take(8) ++ DicomParsing.shortToBytes(newLength, bigEndian)
+          bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)
         } else if ((bytes.size >= 8) && (!explicitVR) && (vr.headerLength == 8)) { //implicit vr
-          bytes.take(4) ++ DicomParsing.shortToBytes(newLength, bigEndian)
+          bytes.take(4) ++ DicomParsing.intToBytes(newLength, bigEndian)
         } else {
-          bytes.take(8) ++ DicomParsing.shortToBytes(newLength, bigEndian)  //implicit vr
+          bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)  //implicit vr
         }
 
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)

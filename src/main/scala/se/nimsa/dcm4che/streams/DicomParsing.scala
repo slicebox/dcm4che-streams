@@ -20,7 +20,6 @@ import akka.util.ByteString
 import org.dcm4che3.data.UID._
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
-import org.dcm4che3.util.ByteUtils
 
 /**
   * Helper methods for parsing binary DICOM data.
