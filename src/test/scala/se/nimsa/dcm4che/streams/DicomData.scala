@@ -5,8 +5,7 @@ import java.util.zip.Deflater
 import akka.stream.testkit.TestSubscriber
 import akka.util.ByteString
 import org.dcm4che3.data.VR
-import se.nimsa.dcm4che.streams.DicomFlows.{DicomAttribute, DicomFragment}
-import se.nimsa.dcm4che.streams.DicomPartFlow._
+import se.nimsa.dcm4che.streams.DicomParts._
 
 object DicomData {
 

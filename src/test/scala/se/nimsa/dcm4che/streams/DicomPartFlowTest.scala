@@ -12,7 +12,7 @@ import org.scalatest.{FlatSpecLike, Matchers}
 class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers {
 
   import DicomData._
-  import DicomPartFlow._
+  import DicomParts._
 
   implicit val materializer = ActorMaterializer()
   implicit val ec = system.dispatcher

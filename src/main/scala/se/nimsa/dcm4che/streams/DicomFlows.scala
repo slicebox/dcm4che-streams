@@ -21,23 +21,12 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
+import se.nimsa.dcm4che.streams.DicomParts._
 
 /**
   * Various flows for transforming streams of <code>DicomPart</code>s.
   */
 object DicomFlows {
-
-  import DicomPartFlow._
-
-  case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
-    def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
-
-    def bigEndian = header.bigEndian
-  }
-
-  case class DicomFragment(bigEndian: Boolean, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
-    def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
-  }
 
   case class ValidationContext(sopClassUID: String, transferSyntax: String)
 
@@ -101,7 +90,7 @@ object DicomFlows {
     * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains(_))
+  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains(_))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
@@ -131,7 +120,7 @@ object DicomFlows {
     * @param keepPreamble true if preamble should be kept, else false
     * @return Flow  of filtered parts
     */
-  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false):  Flow[DicomPartFlow.DicomPart, DicomPartFlow.DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
+  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false):  Flow[DicomPart, DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
 
 
   private def tagFilter(tagCondition: (Int) => Boolean, isWhitelist: Boolean, keepPreamble: Boolean) = Flow[DicomPart].statefulMapConcat {

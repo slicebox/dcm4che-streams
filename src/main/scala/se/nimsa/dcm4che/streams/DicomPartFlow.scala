@@ -24,7 +24,7 @@ import akka.util.ByteString
 import org.dcm4che3.data.{ElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 import org.dcm4che3.util.TagUtils
-import se.nimsa.dcm4che.streams.DicomPartFlow._
+import se.nimsa.dcm4che.streams.DicomParts._
 
 /**
   * Flow which ingests a stream of bytes and outputs a stream of DICOM file parts such as specified by the <code>DicomPart</code>
@@ -118,7 +118,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             case _ =>
               state.copy(pos = updatedPos)
           }
-          val part = Some(DicomHeader(tag, updatedVr, valueLength, isFmi = true, state.bigEndian, bytes))
+          val part = Some(DicomHeader(tag, updatedVr, valueLength, isFmi = true, state.bigEndian, state.explicitVR, bytes))
           val nextStep = updatedState.fmiEndPos.filter(_ <= updatedPos) match {
             case Some(_) =>
               reader.ensure(valueLength + 2)
@@ -135,7 +135,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       def parse(reader: ByteReader) = {
         val attribute = readDatasetHeader(reader, state)
         val nextState = attribute.map {
-          case DicomHeader(_, _, length, _, bigEndian, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
+          case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
           case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(bigEndian, state.explicitVR), inflater)
           case _ => InDatasetHeader(state, inflater)
         }.getOrElse(FinishedParser)
@@ -252,7 +252,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         else if (valueLength == -1)
           Some(DicomFragments(tag, vr, state.bigEndian, bytes))
         else
-          Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, bytes))
+          Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else
         tag match {
           case 0xFFFEE000 => Some(DicomItem(valueLength, state.bigEndian, reader.take(8)))
@@ -270,35 +270,6 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
 }
 
 object DicomPartFlow {
-
-  trait DicomPart {
-    def bigEndian: Boolean
-    def bytes: ByteString
-  }
-
-  case class DicomPreamble(bytes: ByteString) extends DicomPart {
-    def bigEndian = false
-  }
-
-  case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart
-
-  case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomItem(length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomItemDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomFragmentsDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
-
-  case class DicomUnknownPart(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   val partFlow = new DicomPartFlow()
 }

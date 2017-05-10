@@ -19,6 +19,7 @@ package se.nimsa.dcm4che.streams
 import akka.stream.SinkShape
 import akka.stream.scaladsl.{Broadcast, GraphDSL, Sink}
 import akka.util.ByteString
+import se.nimsa.dcm4che.streams.DicomParts.DicomPart
 
 import scala.concurrent.Future
 

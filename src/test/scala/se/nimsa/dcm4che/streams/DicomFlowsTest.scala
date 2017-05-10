@@ -10,7 +10,7 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{FlatSpecLike, Matchers}
-import se.nimsa.dcm4che.streams.DicomPartFlow.DicomPart
+import se.nimsa.dcm4che.streams.DicomParts.DicomPart
 
 
 class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers {
