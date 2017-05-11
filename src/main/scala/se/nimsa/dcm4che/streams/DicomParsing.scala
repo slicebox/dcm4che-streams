@@ -27,8 +27,6 @@ trait DicomParsing {
 
   val dicomPreambleLength = 132
 
-  val beginItemTag = 0xFFFEE000
-
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
     /**
       * Best guess for transfer syntax.
