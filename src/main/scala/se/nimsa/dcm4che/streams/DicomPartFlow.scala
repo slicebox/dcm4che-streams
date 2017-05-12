@@ -245,10 +245,10 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val updatedVr1 = if (vr == VR.UN) ElementDictionary.getStandardElementDictionary.vrOf(tag) else vr
         val updatedVr2 = if ((updatedVr1 == VR.UN) && valueLength == -1) VR.SQ else updatedVr1
         val bytes = reader.take(headerLength)
-        if (vr == VR.SQ)
+        if (updatedVr2 == VR.SQ)
           Some(DicomSequence(tag, state.bigEndian, bytes))
         else if (valueLength == -1)
-          Some(DicomFragments(tag, vr, state.bigEndian, bytes))
+          Some(DicomFragments(tag, updatedVr2, state.bigEndian, bytes))
         else
           Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else

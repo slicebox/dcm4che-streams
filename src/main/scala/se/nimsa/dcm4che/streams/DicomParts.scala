@@ -18,6 +18,7 @@ package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
 import org.dcm4che3.data.{SpecificCharacterSet, VR}
+import org.dcm4che3.util.TagUtils
 
 
 object DicomParts {
@@ -47,21 +48,28 @@ object DicomParts {
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
     }
 
+    override def toString = s"DicomHeader ${TagUtils.toHexString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
   }
 
-  case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart
+  case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart {}
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomItem(length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
+  case class DicomItem(length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+    override def toString = s"DicomItem length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
+  }
 
   case class DicomItemDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
+  case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+    override def toString = s"DicomSequence ${TagUtils.toHexString(tag)} ${if (bigEndian) "(big endian) " else "" }$bytes"
+  }
 
   case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart
+  case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+    override def toString = s"DicomFragments ${TagUtils.toHexString(tag)} $vr ${if (bigEndian) "(big endian) " else "" }$bytes"
+  }
 
   case class DicomFragmentsDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
