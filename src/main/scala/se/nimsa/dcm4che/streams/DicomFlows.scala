@@ -285,8 +285,11 @@ object DicomFlows {
         {
           case preamble: DicomPreamble => // preamble, do not deflate
             preamble :: Nil
-          case DicomEndMarker => // end of stream, make sure deflater writes final bytes
-            finishDeflating()
+          case DicomEndMarker => // end of stream, make sure deflater writes final bytes if deflating has occurred
+            if (deflater.getBytesRead > 0)
+              finishDeflating()
+            else
+              Nil
           case deflatedChunk: DicomDeflatedChunk => // already deflated, pass as-is
             deflatedChunk :: Nil
           case header: DicomHeader if header.isFmi => // FMI, do not deflate and remember we are in FMI
