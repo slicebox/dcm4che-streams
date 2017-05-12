@@ -17,8 +17,7 @@
 package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
-import org.dcm4che3.data.UID._
-import org.dcm4che3.data.{ElementDictionary, VR}
+import org.dcm4che3.data.{ElementDictionary, UID, VR}
 import org.dcm4che3.io.DicomStreamException
 
 /**
@@ -26,7 +25,7 @@ import org.dcm4che3.io.DicomStreamException
   */
 trait DicomParsing {
 
-  val DICOM_PREAMBLE_LENGTH = 132
+  val dicomPreambleLength = 132
 
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
     /**
@@ -36,12 +35,12 @@ trait DicomParsing {
       */
     def assumedTransferSyntax = if (explicitVR) {
       if (bigEndian) {
-        ExplicitVRBigEndianRetired
+        UID.ExplicitVRBigEndianRetired
       } else {
-        ExplicitVRLittleEndian
+        UID.ExplicitVRLittleEndian
       }
     } else {
-      ImplicitVRLittleEndian
+      UID.ImplicitVRLittleEndian
     }
   }
 
@@ -99,8 +98,6 @@ trait DicomParsing {
     Attribute(tag, vr, length, valueWithoutPadding(value))
   }
 
-
-  def isHeader(data: ByteString) = dicomInfo(data).isDefined
 
   def readHeader(buffer: ByteString, assumeBigEndian: Boolean, explicitVR: Boolean): Option[(Int, VR, Int, Int)] = {
     if (explicitVR) {
@@ -165,8 +162,6 @@ trait DicomParsing {
     } else
       None
 
-  def isPreamble(data: ByteString): Boolean = data.slice(128, 132) == ByteString('D', 'I', 'C', 'M')
-
   def tagVr(data: ByteString, bigEndian: Boolean, explicitVr: Boolean): (Int, VR) = {
     val tag = bytesToTag(data, bigEndian)
     if (tag == 0xFFFEE000 || tag == 0xFFFEE00D || tag == 0xFFFEE0DD)
@@ -176,11 +171,16 @@ trait DicomParsing {
     else
       (tag, VR.UN)
   }
+
+  def isPreamble(data: ByteString): Boolean = data.slice(128, 132) == ByteString('D', 'I', 'C', 'M')
+  def isHeader(data: ByteString) = dicomInfo(data).isDefined
+
   def isSequenceDelimiter(tag: Int) = groupNumber(tag) == 0xFFFE
   def isFileMetaInformation(tag: Int) = (tag & 0xFFFF0000) == 0x00020000
   def isPrivateAttribute(tag: Int) = groupNumber(tag) % 2 == 1
-
   def isGroupLength(tag: Int) = elementNumber(tag) == 0
+
+  def isDeflated(transferSyntaxUid: String) = transferSyntaxUid == UID.DeflatedExplicitVRLittleEndian || transferSyntaxUid == UID.JPIPReferencedDeflate
 
   def groupNumber(tag: Int) = tag >>> 16
   def elementNumber(tag: Int) = tag & '\uffff'
