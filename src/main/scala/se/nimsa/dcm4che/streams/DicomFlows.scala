@@ -21,6 +21,7 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
+import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
 /**
@@ -96,18 +97,21 @@ object DicomFlows {
     * Filter a stream of dicom parts such that all attributes that are group length elements except
     * file meta information group length, will be discarded. Group Length (gggg,0000) Standard Data Elements
     * have been retired in the standard.
+    *
     * @return the associated filter Flow
     */
   def groupLengthDiscardFilter = blacklistFilter((tag: Int) => DicomParsing.isGroupLength(tag) && !DicomParsing.isFileMetaInformation(tag))
 
   /**
     * Discards the file meta information.
+    *
     * @return the associated filter Flow
     */
   def fmiDiscardFilter = blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), keepPreamble = false)
 
   /**
     * Blacklist filter for DICOM parts.
+    *
     * @param tagCondition blacklist tag condition
     * @param keepPreamble true if preamble should be kept, else false
     * @return Flow of filtered parts
@@ -116,11 +120,12 @@ object DicomFlows {
 
   /**
     * Tag based whitelist filter for DICOM parts.
+    *
     * @param tagCondition whitelist condition
     * @param keepPreamble true if preamble should be kept, else false
     * @return Flow  of filtered parts
     */
-  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false):  Flow[DicomPart, DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
+  def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false): Flow[DicomPart, DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
 
 
   private def tagFilter(tagCondition: (Int) => Boolean, isWhitelist: Boolean, keepPreamble: Boolean) = Flow[DicomPart].statefulMapConcat {
@@ -166,9 +171,9 @@ object DicomFlows {
       case _: DicomFragmentsDelimitation if discarding => Nil
 
       case _: DicomSequence if discarding => Nil
-      case _: DicomSequenceDelimitation  if discarding => Nil
+      case _: DicomSequenceDelimitation if discarding => Nil
 
-      case dicomAttribute: DicomAttribute  =>
+      case dicomAttribute: DicomAttribute =>
         discarding = shouldDiscard(dicomAttribute.header.tag, isWhitelist)
         if (discarding) {
           Nil
@@ -241,72 +246,154 @@ object DicomFlows {
     *
     * @return
     */
-  def deflateDatasetFlow() = {
+  def deflateDatasetFlow() = Flow[DicomPart]
+    .concat(Source.single(DicomEndMarker))
+    .statefulMapConcat {
+      () =>
+        var inFmi = false
+        val buffer = new Array[Byte](2048)
+        val deflater = new Deflater(-1, true)
 
-    case object DicomEndMarker extends DicomPart {
-      def bigEndian = false
-      def bytes = ByteString.empty
+        def deflate(dicomPart: DicomPart) = {
+          val input = dicomPart.bytes
+          deflater.setInput(input.toArray)
+          var output = ByteString.empty
+          while (!deflater.needsInput) {
+            val bytesDeflated = deflater.deflate(buffer)
+            output = output ++ ByteString(buffer.take(bytesDeflated))
+          }
+          if (output.isEmpty) Nil else DicomDeflatedChunk(dicomPart.bigEndian, output) :: Nil
+        }
+
+        def finishDeflating() = {
+          deflater.finish()
+          var output = ByteString.empty
+          var done = false
+          while (!done) {
+            val bytesDeflated = deflater.deflate(buffer)
+            if (bytesDeflated == 0)
+              done = true
+            else
+              output = output ++ ByteString(buffer.take(bytesDeflated))
+          }
+          deflater.end()
+          if (output.isEmpty) Nil else DicomDeflatedChunk(bigEndian = false, output) :: Nil
+        }
+
+      {
+        case preamble: DicomPreamble => // preamble, do not deflate
+          preamble :: Nil
+        case DicomEndMarker => // end of stream, make sure deflater writes final bytes if deflating has occurred
+          if (deflater.getBytesRead > 0)
+            finishDeflating()
+          else
+            Nil
+        case deflatedChunk: DicomDeflatedChunk => // already deflated, pass as-is
+          deflatedChunk :: Nil
+        case header: DicomHeader if header.isFmi => // FMI, do not deflate and remember we are in FMI
+          inFmi = true
+          header :: Nil
+        case attribute: DicomAttribute if attribute.header.isFmi => // Whole FMI attribute, same as above
+          inFmi = true
+          attribute :: Nil
+        case header: DicomHeader => // Dataset header, remember we are no longer in FMI, deflate
+          inFmi = false
+          deflate(header)
+        case dicomPart if inFmi => // For any dicom part within FMI, do not deflate
+          dicomPart :: Nil
+        case dicomPart => // For all other cases, deflate
+          deflate(dicomPart)
+      }
     }
 
+  /**
+    * Collect the attributes specified by the input set of tags while buffering all elements of the stream. When the
+    * stream has moved past the last attribute to collect, a DicomAttributesElement is emitted containing a list of
+    * DicomAttributeParts with the collected information, followed by all buffered elements. Remaining elements in the
+    * stream are immediately emitted downstream without buffering.
+    *
+    * This flow is used when there is a need to "look ahead" for certain information in the stream so that streamed
+    * elements can be processed correctly according to this information. As an example, an implementation may have
+    * different graph paths for different modalities and the modality must be known before any elements are processed.
+    *
+    * @param tags          tag numbers of attributes to collect. Collection (and hence buffering) will end when the
+    *                      stream moves past the highest tag number
+    * @param maxBufferSize the maximum allowed size of the buffer (to avoid running out of memory). The flow will fail
+    *                      if this limit is exceed. Set to 0 for an unlimited buffer size
+    * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
+    */
+  def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .concat(Source.single(DicomEndMarker))
       .statefulMapConcat {
+        val stopTag = if (tags.isEmpty) 0 else tags.max
+
         () =>
-          var inFmi = false
-          val buffer = new Array[Byte](2048)
-          val deflater = new Deflater(-1, true)
+          var reachedEnd = false
+          var currentBufferSize = 0
+          var currentAttribute: Option[DicomAttribute] = None
+          var buffer: List[DicomPart] = Nil
+          var attributes = Seq.empty[DicomAttribute]
 
-          def deflate(dicomPart: DicomPart) = {
-            val input = dicomPart.bytes
-            deflater.setInput(input.toArray)
-            var output = ByteString.empty
-            while (!deflater.needsInput) {
-              val bytesDeflated = deflater.deflate(buffer)
-              output = output ++ ByteString(buffer.take(bytesDeflated))
-            }
-            if (output.isEmpty) Nil else DicomDeflatedChunk(dicomPart.bigEndian, output) :: Nil
-          }
+          def attributesAndBuffer() = {
+            val parts = DicomAttributes(attributes) :: buffer
 
-          def finishDeflating() = {
-            deflater.finish()
-            var output = ByteString.empty
-            var done = false
-            while (!done) {
-              val bytesDeflated = deflater.deflate(buffer)
-              if (bytesDeflated == 0)
-                done = true
-              else
-                output = output ++ ByteString(buffer.take(bytesDeflated))
-            }
-            deflater.end()
-            if (output.isEmpty) Nil else DicomDeflatedChunk(bigEndian = false, output) :: Nil
+            reachedEnd = true
+            buffer = Nil
+            currentBufferSize = 0
+
+            parts
           }
 
         {
-          case preamble: DicomPreamble => // preamble, do not deflate
-            preamble :: Nil
-          case DicomEndMarker => // end of stream, make sure deflater writes final bytes if deflating has occurred
-            if (deflater.getBytesRead > 0)
-              finishDeflating()
-            else
-              Nil
-          case deflatedChunk: DicomDeflatedChunk => // already deflated, pass as-is
-            deflatedChunk :: Nil
-          case header: DicomHeader if header.isFmi => // FMI, do not deflate and remember we are in FMI
-            inFmi = true
-            header :: Nil
-          case attribute: DicomAttribute if attribute.header.isFmi => // Whole FMI attribute, same as above
-            inFmi = true
-            attribute :: Nil
-          case header: DicomHeader => // Dataset header, remember we are no longer in FMI, deflate
-            inFmi = false
-            deflate(header)
-          case dicomPart if inFmi => // For any dicom part within FMI, do not deflate
-            dicomPart :: Nil
-          case dicomPart => // For all other cases, deflate
-            deflate(dicomPart)
+          case DicomEndMarker if reachedEnd =>
+            Nil
+
+          case DicomEndMarker =>
+            attributesAndBuffer()
+
+          case part if reachedEnd =>
+            part :: Nil
+
+          case part =>
+            currentBufferSize = currentBufferSize + part.bytes.size
+            if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
+              throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
+            }
+
+            buffer = buffer :+ part
+
+            part match {
+              case header: DicomHeader if tags.contains(header.tag) =>
+                currentAttribute = Some(DicomAttribute(header, Seq.empty))
+                Nil
+
+              case header: DicomHeader =>
+                currentAttribute = None
+                Nil
+
+              case valueChunk: DicomValueChunk =>
+
+                currentAttribute match {
+                  case Some(attribute) =>
+                    val updatedAttribute = attribute.copy(valueChunks = attribute.valueChunks :+ valueChunk)
+                    currentAttribute = Some(updatedAttribute)
+                    if (valueChunk.last) {
+                      attributes = attributes :+ updatedAttribute
+                      currentAttribute = None
+                      if (attributes.head.header.tag >= stopTag) {
+                        attributesAndBuffer()
+                      } else
+                        Nil
+                    } else
+                      Nil
+
+                  case None => Nil
+                }
+
+              case _ => Nil
+            }
         }
       }
-  }
 
 }

@@ -1,6 +1,6 @@
 package se.nimsa.dcm4che.streams
 
-import java.io.ByteArrayInputStream
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.util
 
 import akka.actor.ActorSystem
@@ -8,8 +8,8 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import akka.testkit.TestKit
 import akka.util.ByteString
-import org.dcm4che3.data.{Attributes, Fragments, Tag}
-import org.dcm4che3.io.{DicomInputStream, DicomStreamException}
+import org.dcm4che3.data._
+import org.dcm4che3.io.{DicomInputStream, DicomOutputStream, DicomStreamException}
 import org.scalatest.{AsyncFlatSpecLike, Matchers}
 
 import scala.concurrent.Future
@@ -30,11 +30,18 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
     (fmi, dataset)
   }
 
+  def toBytes(attributes: Attributes, tsuid: String): ByteString = {
+    val baos = new ByteArrayOutputStream()
+    val dos = new DicomOutputStream(baos, tsuid)
+    dos.writeDataset(null, attributes)
+    dos.close()
+    ByteString(baos.toByteArray)
+  }
+
   def toFlowAttributes(bytes: ByteString): Future[(Option[Attributes], Option[Attributes])] =
     Source.single(bytes)
       .via(new DicomPartFlow())
       .via(attributeFlow)
-      //.via(printFlow)
       .runWith(attributesSink)
 
   def assertEquivalentToDcm4che(bytes: ByteString) = {
@@ -53,6 +60,11 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
 
   it should "be equivalent to dcm4che for a file with neither FMI nor preamble" in {
     val bytes = patientNameJohnDoe
+    assertEquivalentToDcm4che(bytes)
+  }
+
+  it should "be equivalent to dcm4che for a file with big endian encoding" in {
+    val bytes = patientNameJohnDoeBE
     assertEquivalentToDcm4che(bytes)
   }
 
@@ -137,4 +149,22 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
     val bytes = seqStart ++ itemNoLength ++ seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
     assertEquivalentToDcm4che(bytes)
   }
+
+  it should "not handle non-standard encodings when specific character set is not specified" in {
+    val attr = new Attributes()
+    attr.setString(Tag.PatientName, VR.PN, "Ö₯")
+    val bytes = toBytes(attr, UID.ExplicitVRLittleEndian)
+    val attr2 = toAttributes(bytes)._2.get
+    attr2.getString(Tag.PatientName) should not be "Ö₯"
+  }
+
+  it should "handle non-standard encodings" in {
+    val attr = new Attributes()
+    attr.setSpecificCharacterSet("ISO 2022 IR 100", "ISO 2022 IR 126")
+    attr.setString(Tag.PatientName, VR.PN, "Ö₯")
+    val bytes = toBytes(attr, UID.ExplicitVRLittleEndian)
+    val attr2 = toAttributes(bytes)._2.get
+    attr2.getString(Tag.PatientName) shouldBe "Ö₯"
+  }
+
 }
