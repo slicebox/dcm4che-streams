@@ -25,7 +25,6 @@ object DicomParts {
 
   trait DicomPart {
     def bigEndian: Boolean
-
     def bytes: ByteString
   }
 
@@ -92,12 +91,11 @@ object DicomParts {
       val newBytes = header.vr.toBytes(newValue, cs)
       val needsPadding = newBytes.size % 2 == 1
       val newLength = if (needsPadding) newBytes.size + 1 else newBytes.size
-      val updatedHeader = header.withUpdatedLength(newLength.toShort)
-      val updatedValue = if (needsPadding) {
+      val updatedHeader = header.withUpdatedLength(newLength)
+      val updatedValue = if (needsPadding)
         ByteString.fromArray(newBytes :+ header.vr.paddingByte().toByte)
-      } else {
+      else
         ByteString.fromArray(newBytes)
-      }
       DicomAttribute(updatedHeader, Seq(DicomValueChunk(header.bigEndian, updatedValue, last = true)))
     }
 
