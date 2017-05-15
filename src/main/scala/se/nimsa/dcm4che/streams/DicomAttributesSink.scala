@@ -36,7 +36,7 @@ object DicomAttributesSink {
     if (header.length == 0)
       fmi.setNull(header.tag, header.vr)
     else {
-      val bytes = dicomAttribute.bytes.toArray
+      val bytes = dicomAttribute.valueBytes.toArray
       if (!DicomParsing.isGroupLength(header.tag)) {
         if (dicomAttribute.bigEndian != fmi.bigEndian) header.vr.toggleEndian(bytes, false)
         fmi.setBytes(header.tag, header.vr, bytes)
@@ -52,7 +52,7 @@ object DicomAttributesSink {
       attributesData
     }
     else {
-      val bytes = dicomAttribute.bytes.toArray
+      val bytes = dicomAttribute.valueBytes.toArray
       if (!DicomParsing.isGroupLength(header.tag)) {
         if (attributesData.attributesStack.nonEmpty && dicomAttribute.bigEndian != attributesData.attributesStack.head.bigEndian)
           header.vr.toggleEndian(bytes, false)

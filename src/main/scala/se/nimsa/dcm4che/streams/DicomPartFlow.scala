@@ -21,7 +21,7 @@ import java.util.zip.Inflater
 import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
-import org.dcm4che3.data.{ElementDictionary, VR}
+import org.dcm4che3.data.{ElementDictionary, Tag, UID, VR}
 import org.dcm4che3.io.DicomStreamException
 import org.dcm4che3.util.TagUtils
 import se.nimsa.dcm4che.streams.DicomParts._
@@ -67,10 +67,10 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     case object AtBeginning extends DicomParseStep {
       def parse(reader: ByteReader) = {
         val maybePreamble =
-          if (!isUpstreamClosed || reader.remainingSize >= DICOM_PREAMBLE_LENGTH) {
-            reader.ensure(DICOM_PREAMBLE_LENGTH)
-            if (DicomParsing.isPreamble(reader.remainingData.take(DICOM_PREAMBLE_LENGTH)))
-              Some(DicomPreamble(bytes = reader.take(DICOM_PREAMBLE_LENGTH)))
+          if (!isUpstreamClosed || reader.remainingSize >= dicomPreambleLength) {
+            reader.ensure(dicomPreambleLength)
+            if (isPreamble(reader.remainingData.take(dicomPreambleLength)))
+              Some(DicomPreamble(bytes = reader.take(dicomPreambleLength)))
             else None
           }
           else None
@@ -78,7 +78,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
           ParseResult(maybePreamble, FinishedParser)
         else {
           reader.ensure(8)
-          DicomParsing.dicomInfo(reader.remainingData.take(8)).map { info =>
+          dicomInfo(reader.remainingData.take(8)).map { info =>
             val nextState = if (info.hasFmi)
               InFmiHeader(FmiHeaderState(None, info.bigEndian, info.explicitVR, info.hasFmi, 0, None))
             else
@@ -92,7 +92,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     case class InFmiHeader(state: FmiHeaderState) extends DicomParseStep {
       def parse(reader: ByteReader) = {
         val (tag, vr, headerLength, valueLength) = readHeader(reader, state)
-        if (DicomParsing.groupNumber(tag) != 2) {
+        if (groupNumber(tag) != 2) {
           log.warning("Missing or wrong File Meta Information Group Length (0002,0000)")
           reader.ensure(valueLength + 2)
           ParseResult(None, toDatasetStep(reader.remainingData.drop(valueLength).take(2), state))
@@ -102,11 +102,11 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
           val bytes = reader.take(headerLength)
           val updatedPos = state.pos + headerLength + valueLength
           val updatedState = tag match {
-            case 0x00020000 => // meta info length
+            case Tag.FileMetaInformationGroupLength =>
               reader.ensure(4)
               val valueBytes = reader.remainingData.take(4)
-              state.copy(pos = updatedPos, fmiEndPos = Some(updatedPos + DicomParsing.bytesToInt(valueBytes, state.bigEndian)))
-            case 0x00020010 => // transfer syntax
+              state.copy(pos = updatedPos, fmiEndPos = Some(updatedPos + bytesToInt(valueBytes, state.bigEndian)))
+            case Tag.TransferSyntaxUID =>
               if (valueLength < transferSyntaxLengthLimit) {
                 reader.ensure(valueLength)
                 val valueBytes = reader.remainingData.take(valueLength)
@@ -189,12 +189,10 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     def toDatasetStep(firstTwoBytes: ByteString, state: FmiHeaderState): DicomParseStep = {
       val tsuid = state.tsuid.getOrElse {
         log.warning("Missing Transfer Syntax (0002,0010) - assume Explicit VR Little Endian")
-        "1.2.840.10008.1.2.1"
+        UID.ExplicitVRLittleEndian
       }
 
-      val deflatedTs = tsuid == "1.2.840.10008.1.2.1.99" || tsuid == "1.2.840.10008.1.2.4.95"
-
-      if (deflatedTs)
+      if (isDeflated(tsuid))
         if (inflate) {
           val inflater =
             if (hasZLIBHeader(firstTwoBytes)) {
@@ -204,16 +202,16 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             else
               new Inflater(true)
           InDatasetHeader(DatasetHeaderState(
-            bigEndian = tsuid == "1.2.840.10008.1.2.2",
-            explicitVR = tsuid != "1.2.840.10008.1.2"),
+            bigEndian = tsuid == UID.ExplicitVRBigEndianRetired,
+            explicitVR = tsuid != UID.ImplicitVRLittleEndian),
             Some(InflateData(inflater, new Array[Byte](chunkSize))))
         }
         else
           InDeflatedData(state.bigEndian)
       else
         InDatasetHeader(DatasetHeaderState(
-          bigEndian = tsuid == "1.2.840.10008.1.2.2",
-          explicitVR = tsuid != "1.2.840.10008.1.2"),
+          bigEndian = tsuid == UID.ExplicitVRBigEndianRetired,
+          explicitVR = tsuid != UID.ImplicitVRLittleEndian),
           None)
     }
 
@@ -223,19 +221,19 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
 
     def readHeader(reader: ByteReader, dicomState: HeaderState): (Int, VR, Int, Int) = {
       reader.ensure(8)
-      val tagVr = reader.remainingData.take(8)
-      val (tag, vr) = DicomParsing.tagVr(tagVr, dicomState.bigEndian, dicomState.explicitVR)
+      val tagVrBytes = reader.remainingData.take(8)
+      val (tag, vr) = tagVr(tagVrBytes, dicomState.bigEndian, dicomState.explicitVR)
       if (vr == null)
-        (tag, vr, 8, bytesToInt(tagVr.drop(4), dicomState.bigEndian))
+        (tag, vr, 8, bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian))
       else if (dicomState.explicitVR)
         if (vr.headerLength == 8)
-          (tag, vr, 8, bytesToUShort(tagVr.drop(6), dicomState.bigEndian))
+          (tag, vr, 8, bytesToUShort(tagVrBytes.drop(6), dicomState.bigEndian))
         else {
           reader.ensure(12)
           (tag, vr, 12, bytesToInt(reader.remainingData.drop(8), dicomState.bigEndian))
         }
       else
-        (tag, VR.UN, 8, bytesToInt(tagVr.drop(4), dicomState.bigEndian))
+        (tag, VR.UN, 8, bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian))
     }
 
     def readDatasetHeader(reader: ByteReader, state: DatasetHeaderState): Option[DicomPart] = {
@@ -247,10 +245,10 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val updatedVr1 = if (vr == VR.UN) ElementDictionary.getStandardElementDictionary.vrOf(tag) else vr
         val updatedVr2 = if ((updatedVr1 == VR.UN) && valueLength == -1) VR.SQ else updatedVr1
         val bytes = reader.take(headerLength)
-        if (vr == VR.SQ)
+        if (updatedVr2 == VR.SQ)
           Some(DicomSequence(tag, state.bigEndian, bytes))
         else if (valueLength == -1)
-          Some(DicomFragments(tag, vr, state.bigEndian, bytes))
+          Some(DicomFragments(tag, updatedVr2, state.bigEndian, bytes))
         else
           Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else

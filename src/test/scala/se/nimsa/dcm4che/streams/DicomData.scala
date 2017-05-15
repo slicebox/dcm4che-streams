@@ -170,6 +170,12 @@ object DicomData {
     def expectDicomError() = probe
       .request(1)
       .expectError()
+
+    def expectAttributesPart(attributesPart: DicomAttributes) = probe
+      .request(1)
+      .expectNextChainingPF {
+        case p: DicomAttributes => p == attributesPart
+      }
   }
 
 }
