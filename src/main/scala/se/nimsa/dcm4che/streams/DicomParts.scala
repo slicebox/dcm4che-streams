@@ -79,8 +79,8 @@ object DicomParts {
   }
 
   case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
-    def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
-
+    def valueBytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
+    def bytes = header.bytes ++ valueBytes
     def bigEndian = header.bigEndian
 
     // LO: long string 64 chars max
