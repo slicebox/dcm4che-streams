@@ -47,8 +47,9 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val value = DicomValueChunk(false, patientNameJohnDoe.drop(8) ,true)
     val attribute = DicomAttribute(header, Seq(value))
     val updatedAttribute = attribute.withUpdatedStringValue("Jimmyboy^Doe")
-    updatedAttribute.bytes.size shouldEqual 12
+    updatedAttribute.valueBytes.size shouldEqual 12
     updatedAttribute.header.length shouldEqual 12
+    updatedAttribute.bytes.size shouldEqual 20
   }
 
   it should "should return a new attribute with updated header and updated value with padding" in {
@@ -58,8 +59,8 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val attribute = DicomAttribute(header, Seq(value))
     val updatedAttribute = attribute.withUpdatedStringValue("Jimmy^Doe")
 
-    updatedAttribute.bytes.size shouldEqual 10
+    updatedAttribute.valueBytes.size shouldEqual 10
     updatedAttribute.header.length shouldEqual 10
-    updatedAttribute.bytes.drop(9) shouldEqual ByteString(32)
+    updatedAttribute.valueBytes.drop(9) shouldEqual ByteString(32)
   }
 }
