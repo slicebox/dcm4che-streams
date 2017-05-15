@@ -325,5 +325,15 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDeflatedChunk()
   }
 
+  it should "not ouput anything when the stream is empty" in {
+    val bytes = ByteString.empty
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(deflateDatasetFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectDicomComplete()
+  }
 }
 
