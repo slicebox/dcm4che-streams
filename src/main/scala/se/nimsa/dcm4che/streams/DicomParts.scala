@@ -25,7 +25,6 @@ object DicomParts {
 
   trait DicomPart {
     def bigEndian: Boolean
-
     def bytes: ByteString
   }
 
@@ -37,9 +36,9 @@ object DicomParts {
 
     def withUpdatedLength(newLength: Int) : DicomHeader = {
 
-      val updated = if ((bytes.size >= 8) && (explicitVR) && (vr.headerLength == 8)) { //explicit vr
+      val updated = if ((bytes.size >= 8) && explicitVR && (vr.headerLength == 8)) { //explicit vr
           bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, bigEndian)
-        } else if ((bytes.size >= 12) && (explicitVR) && (vr.headerLength == 12)) { //explicit vr
+        } else if ((bytes.size >= 12) && explicitVR && (vr.headerLength == 12)) { //explicit vr
           bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)
         } else { //implicit vr
           bytes.take(4) ++ DicomParsing.intToBytes(newLength, bigEndian)
@@ -80,8 +79,8 @@ object DicomParts {
   }
 
   case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
-    def bytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
-
+    def valueBytes = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
+    def bytes = header.bytes ++ valueBytes
     def bigEndian = header.bigEndian
 
     // LO: long string 64 chars max
@@ -92,23 +91,32 @@ object DicomParts {
       val newBytes = header.vr.toBytes(newValue, cs)
       val needsPadding = newBytes.size % 2 == 1
       val newLength = if (needsPadding) newBytes.size + 1 else newBytes.size
-      val updatedHeader = header.withUpdatedLength(newLength.toShort)
-      val updatedValue = if (needsPadding) {
+      val updatedHeader = header.withUpdatedLength(newLength)
+      val updatedValue = if (needsPadding)
         ByteString.fromArray(newBytes :+ header.vr.paddingByte().toByte)
-      } else {
+      else
         ByteString.fromArray(newBytes)
-      }
-      DicomAttribute(updatedHeader, Seq(DicomValueChunk(header.bigEndian, updatedValue, true)))
+      DicomAttribute(updatedHeader, Seq(DicomValueChunk(header.bigEndian, updatedValue, last = true)))
     }
 
     // DA: A string of characters of the format YYYYMMDD, 8 bytes fixed
     def withUpdatedDateValue(newValue: String, cs: SpecificCharacterSet = SpecificCharacterSet.ASCII): DicomAttribute = {
       val newBytes = header.vr.toBytes(newValue, cs)
       val updatedValue = ByteString.fromArray(newBytes)
-      DicomAttribute(header, Seq(DicomValueChunk(header.bigEndian, updatedValue, true)))
+      DicomAttribute(header, Seq(DicomValueChunk(header.bigEndian, updatedValue, last = true)))
     }
 
     def asDicomParts: Seq[DicomPart] = header +: valueChunks
+  }
+
+  case object DicomEndMarker extends DicomPart {
+    def bigEndian = false
+    def bytes = ByteString.empty
+  }
+
+  case class DicomAttributes(attributes: Seq[DicomAttribute]) extends DicomPart {
+    def bigEndian = attributes.headOption.exists(_.bigEndian)
+    def bytes = attributes.map(_.bytes).reduce(_ ++ _)
   }
 
 }
