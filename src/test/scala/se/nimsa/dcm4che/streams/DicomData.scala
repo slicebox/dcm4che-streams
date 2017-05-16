@@ -71,6 +71,8 @@ object DicomData {
   val mediaStorageSOPInstanceUIDImplicitLE = ByteString(2, 0, 3, 0, 56, 0, 0, 0) ++ ByteString.fromArray("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735".toCharArray.map(_.toByte)) ++ ByteString(0)
   val tsuidExplicitLEImplicitLE = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
 
+  def pixelData(length: Int) = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x42, 0, 0) ++ DicomParsing.intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
+
 
   implicit class DicomPartProbe(probe: TestSubscriber.Probe[DicomPart]) {
     def expectPreamble() = probe
