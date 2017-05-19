@@ -392,22 +392,28 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   it should "apply the stop tag appropriately" in {
-    val bytes = studyDate ++ patientNameJohnDoe
+    val bytes = studyDate ++ patientNameJohnDoe ++ pixelData(2000)
 
     val source = Source.single(bytes)
-      .via(partFlow)
-      .via(collectAttributesFlow(Set(Tag.StudyDate)))
+      .via(new DicomPartFlow(chunkSize = 500))
+      .via(collectAttributesFlow(Set(Tag.StudyDate, Tag.PatientName), maxBufferSize = 1000))
 
     source.runWith(TestSink.probe[DicomPart])
       .request(1)
       .expectNextChainingPF {
         case DicomAttributes(attributes) =>
-          attributes should have length 1
+          attributes should have length 2
           attributes.head.header.tag shouldBe Tag.StudyDate
+          attributes.last.header.tag shouldBe Tag.PatientName
       }
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.PixelData)
+      .expectValueChunk()
+      .expectValueChunk()
+      .expectValueChunk()
       .expectValueChunk()
       .expectDicomComplete()
   }
