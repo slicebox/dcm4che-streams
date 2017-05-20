@@ -381,9 +381,9 @@ object DicomFlows {
                     if (valueChunk.last) {
                       attributes = attributes :+ updatedAttribute
                       currentAttribute = None
-                      if (attributes.head.header.tag >= stopTag) {
+                      if (updatedAttribute.header.tag >= stopTag)
                         attributesAndBuffer()
-                      } else
+                      else
                         Nil
                     } else
                       Nil

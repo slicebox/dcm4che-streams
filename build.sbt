@@ -1,7 +1,7 @@
 import de.heikoseeberger.sbtheader.license.Apache2_0
 
 name := "dcm4che-streams"
-version := "0.2"
+version := "0.2.1"
 organization := "se.nimsa"
 scalaVersion := "2.12.2"
 crossScalaVersions := Seq("2.11.8", "2.12.2")
