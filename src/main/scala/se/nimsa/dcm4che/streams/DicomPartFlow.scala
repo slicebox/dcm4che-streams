@@ -94,8 +94,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val (tag, vr, headerLength, valueLength) = readHeader(reader, state)
         if (groupNumber(tag) != 2) {
           log.warning("Missing or wrong File Meta Information Group Length (0002,0000)")
-          reader.ensure(valueLength + 2)
-          ParseResult(None, toDatasetStep(reader.remainingData.drop(valueLength).take(2), state))
+          ParseResult(None, toDatasetStep(ByteString(0,0), state))
         } else {
           // no meta attributes can lead to vr = null
           val updatedVr = if (vr == VR.UN) ElementDictionary.getStandardElementDictionary.vrOf(tag) else vr
@@ -192,27 +191,24 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         UID.ExplicitVRLittleEndian
       }
 
+      val bigEndian = tsuid == UID.ExplicitVRBigEndianRetired
+      val explicitVR = tsuid != UID.ImplicitVRLittleEndian
+
       if (isDeflated(tsuid))
         if (inflate) {
           val inflater =
             if (hasZLIBHeader(firstTwoBytes)) {
               log.warning("Deflated DICOM Stream with ZLIB Header")
               new Inflater()
-            }
-            else
+            } else
               new Inflater(true)
-          InDatasetHeader(DatasetHeaderState(
-            bigEndian = tsuid == UID.ExplicitVRBigEndianRetired,
-            explicitVR = tsuid != UID.ImplicitVRLittleEndian),
+          InDatasetHeader(
+            DatasetHeaderState(bigEndian = bigEndian, explicitVR = explicitVR),
             Some(InflateData(inflater, new Array[Byte](chunkSize))))
-        }
-        else
+        } else
           InDeflatedData(state.bigEndian)
       else
-        InDatasetHeader(DatasetHeaderState(
-          bigEndian = tsuid == UID.ExplicitVRBigEndianRetired,
-          explicitVR = tsuid != UID.ImplicitVRLittleEndian),
-          None)
+        InDatasetHeader(DatasetHeaderState(bigEndian = bigEndian, explicitVR = explicitVR), None)
     }
 
     private def hasZLIBHeader(firstTwoBytes: ByteString): Boolean = {

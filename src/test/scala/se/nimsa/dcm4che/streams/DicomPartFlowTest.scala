@@ -367,4 +367,19 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectDeflatedChunk()
       .expectDicomComplete()
   }
+
+  it should "accept meta information encoded with implicit VR" in {
+    val bytes = preamble ++ tsuidExplicitLESelfImplicit ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
 }
