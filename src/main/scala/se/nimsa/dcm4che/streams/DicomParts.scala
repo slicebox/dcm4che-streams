@@ -50,6 +50,26 @@ object DicomParts {
     override def toString = s"DicomHeader ${TagUtils.toHexString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
   }
 
+  object DicomHeader {
+    def apply(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean): DicomHeader = {
+      val tagBytes = DicomParsing.tagToBytes(tag, bigEndian)
+      val headerBytes =
+        if (explicitVR) {
+          val vrBytes = DicomParsing.shortToBytesBE(vr.code.toShort)
+          val lengthBytes =
+            if (vr.headerLength() == 8)
+              DicomParsing.shortToBytes(length.toShort, bigEndian)
+            else
+              ByteString(0, 0) ++ DicomParsing.intToBytes(length, bigEndian)
+          tagBytes ++ vrBytes ++ lengthBytes
+        } else {
+          val lengthBytes = DicomParsing.intToBytes(length, bigEndian)
+          tagBytes ++ lengthBytes
+        }
+      DicomHeader(tag, vr, length, isFmi, bigEndian, explicitVR, headerBytes)
+    }
+  }
+
   case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart {}
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart

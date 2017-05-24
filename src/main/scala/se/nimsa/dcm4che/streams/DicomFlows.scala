@@ -21,6 +21,7 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
+import org.dcm4che3.data.{StandardElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
@@ -205,38 +206,85 @@ object DicomFlows {
   def validateFlowWithContext(contexts: Seq[ValidationContext]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 
   /**
-    * Simple transformation flow for mapping the values of certain attributes to new values. The application is "flat"
-    * in the sense that attributes are transformed no matter if they are part of sequences or not.
+    * Simple transformation flow for inserting or overwriting the values of specified attributes. Only modifies or
+    * inserts attributes in the root dataset, not inside sequences. When inserting a new attribute, the corresponding
+    * transform will be called with an empty `ByteString`.
     *
-    * @param transforms Each transform is a 2-tuple of tag number and value transform
+    * @param insertIfAbsent Determine if absent attributes with specified transforms will be inserted or if this flow
+    *                       modfies attributes only.
+    * @param transforms     Each transform is a 2-tuple of tag number and value transform
     * @return the transformed flow of DICOM parts
     */
-  def attributesTransformFlow(transforms: (Int, ByteString => ByteString)*) = Flow[DicomPart].statefulMapConcat {
-    () =>
-      val tags = transforms.map(_._1)
-      var value = ByteString.empty
-      var headerMaybe: Option[DicomHeader] = None
-      var transformMaybe: Option[ByteString => ByteString] = None
+  def modifyFlow(insertIfAbsent: Boolean, transforms: (Int, ByteString => ByteString)*): Flow[DicomPart, DicomPart, NotUsed] =
+    Flow[DicomPart]
+      .concat(Source.single(DicomEndMarker))
+      .statefulMapConcat {
+        () =>
+          var tagsToProcess = transforms.map(_._1)
+          var value = ByteString.empty
+          var headerMaybe: Option[DicomHeader] = None
+          var transformMaybe: Option[ByteString => ByteString] = None
+          var sequenceDepth = 0
+          var bigEndian = false
+          var explicitVR = true
 
-    {
-      case header: DicomHeader if tags.contains(header.tag) =>
-        headerMaybe = Some(header)
-        value = ByteString.empty
-        transformMaybe = transforms.find(_._1 == header.tag).map(_._2)
-        Nil
-      case chunk: DicomValueChunk if transformMaybe.isDefined && headerMaybe.isDefined =>
-        value = value ++ chunk.bytes
-        if (chunk.last) {
-          val newValue = transformMaybe.map(t => t(value)).getOrElse(value)
-          val newHeader = headerMaybe.map(header => header.withUpdatedLength(newValue.length.toShort)).get
-          transformMaybe = None
-          headerMaybe = None
-          newHeader :: DicomValueChunk(chunk.bigEndian, newValue, last = true) :: Nil
-        } else
-          Nil
-      case dicomPart => dicomPart :: Nil
-    }
-  }
+          def updateSyntax(header: DicomHeader): Unit = {
+            bigEndian = header.bigEndian
+            explicitVR = header.explicitVR
+          }
+
+          def headerAndValue(tag: Int): List[DicomPart] = {
+            val transform = transforms.find(_._1 == tag).map(_._2).head
+            val valueBytes = transform(ByteString.empty)
+            val dictVr = StandardElementDictionary.INSTANCE.vrOf(tag)
+            if (dictVr == VR.SQ) throw new IllegalArgumentException("Cannot insert sequence attributes")
+            val vr = if (dictVr == VR.UN) VR.LO else dictVr
+            val isFmi = DicomParsing.isFileMetaInformation(tag)
+            val header = DicomHeader(tag, vr, valueBytes.length, isFmi, bigEndian, explicitVR)
+            val value = DicomValueChunk(bigEndian, valueBytes, last = true)
+            tagsToProcess = tagsToProcess.filterNot(_ == tag)
+            header :: value :: Nil
+          }
+
+        {
+          case header: DicomHeader if sequenceDepth == 0 && insertIfAbsent && tagsToProcess.exists(_ < header.tag) =>
+            updateSyntax(header)
+            val tag = tagsToProcess.find(_ < header.tag).head
+            headerAndValue(tag) ::: header :: Nil
+          case header: DicomHeader if sequenceDepth == 0 && tagsToProcess.contains(header.tag) =>
+            updateSyntax(header)
+            headerMaybe = Some(header)
+            value = ByteString.empty
+            transformMaybe = transforms.find(_._1 == header.tag).map(_._2)
+            tagsToProcess = tagsToProcess.filterNot(_ == header.tag)
+            Nil
+          case header: DicomHeader =>
+            updateSyntax(header)
+            header :: Nil
+          case chunk: DicomValueChunk if transformMaybe.isDefined && headerMaybe.isDefined =>
+            value = value ++ chunk.bytes
+            if (chunk.last) {
+              val newValue = transformMaybe.map(t => t(value)).getOrElse(value)
+              val newHeader = headerMaybe.get.withUpdatedLength(newValue.length.toShort)
+              transformMaybe = None
+              headerMaybe = None
+              newHeader :: DicomValueChunk(chunk.bigEndian, newValue, last = true) :: Nil
+            } else
+              Nil
+          case s: DicomSequence =>
+            sequenceDepth += 1
+            s :: Nil
+          case s: DicomSequenceDelimitation =>
+            sequenceDepth -= 1
+            s :: Nil
+          case DicomEndMarker if insertIfAbsent =>
+            tagsToProcess.flatMap(tag => headerAndValue(tag)).toList
+          case DicomEndMarker =>
+            Nil
+          case part =>
+            part :: Nil
+        }
+      }
 
   /**
     * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in DicomPartFlow
@@ -368,7 +416,7 @@ object DicomFlows {
                 currentAttribute = Some(DicomAttribute(header, Seq.empty))
                 Nil
 
-              case header: DicomHeader =>
+              case _: DicomHeader =>
                 currentAttribute = None
                 Nil
 
