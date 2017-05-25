@@ -47,7 +47,7 @@ object DicomParts {
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
     }
 
-    override def toString = s"DicomHeader ${TagUtils.toHexString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomHeader ${TagUtils.toString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
   }
 
   object DicomHeader {
@@ -70,7 +70,9 @@ object DicomParts {
     }
   }
 
-  case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart {}
+  case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart {
+    override def toString = s"DicomValueChunk ${if (last) "(last) " else ""}length = ${bytes.length} ${if (bigEndian) "(big endian) " else ""}ASCII = '${new String(bytes.toArray, "US-ASCII")}' $bytes"
+  }
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
@@ -81,13 +83,13 @@ object DicomParts {
   case class DicomItemDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomSequence ${TagUtils.toHexString(tag)} ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomSequence ${TagUtils.toString(tag)} ${if (bigEndian) "(big endian) " else "" }$bytes"
   }
 
   case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomFragments ${TagUtils.toHexString(tag)} $vr ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomFragments ${TagUtils.toString(tag)} $vr ${if (bigEndian) "(big endian) " else "" }$bytes"
   }
 
   case class DicomFragmentsDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
