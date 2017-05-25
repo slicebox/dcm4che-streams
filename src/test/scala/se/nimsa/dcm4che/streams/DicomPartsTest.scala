@@ -63,7 +63,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val header = DicomHeader(tag, vr, length, isFmi = false, bigEndian = false, explicitVR = true, patientNameJohnDoe.take(8))
     val value = DicomValueChunk(bigEndian = false, patientNameJohnDoe.drop(8) ,last = true)
     val attribute = DicomAttribute(header, Seq(value))
-    val updatedAttribute = attribute.withUpdatedStringValue("Jimmyboy^Doe")
+    val updatedAttribute = attribute.withUpdatedValue("Jimmyboy^Doe")
     updatedAttribute.valueBytes.size shouldEqual 12
     updatedAttribute.header.length shouldEqual 12
     updatedAttribute.bytes.size shouldEqual 20
@@ -74,7 +74,7 @@ class DicomPartsTest extends FlatSpecLike with Matchers {
     val header = DicomHeader(tag, vr, length, isFmi = false, bigEndian = false, explicitVR = true, patientNameJohnDoe.take(8))
     val value = DicomValueChunk(bigEndian = false, patientNameJohnDoe.drop(8) ,last = true)
     val attribute = DicomAttribute(header, Seq(value))
-    val updatedAttribute = attribute.withUpdatedStringValue("Jimmy^Doe")
+    val updatedAttribute = attribute.withUpdatedValue("Jimmy^Doe")
 
     updatedAttribute.valueBytes.size shouldEqual 10
     updatedAttribute.header.length shouldEqual 10
