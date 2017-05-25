@@ -295,6 +295,7 @@ object DicomFlows {
           case DicomEndMarker =>
             modificationsLeft
               .filter(_.insert)
+              .sortBy(_.tag)
               .flatMap(modification => headerAndValue(modification.tag))
           case part =>
             part :: Nil
