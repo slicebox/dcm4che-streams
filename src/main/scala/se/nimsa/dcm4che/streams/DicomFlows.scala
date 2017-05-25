@@ -258,8 +258,8 @@ object DicomFlows {
             updateSyntax(header)
             if (sequenceDepth == 0)
               modificationsLeft
-                .find(_.tag < header.tag)
                 .filter(_.insert)
+                .find(_.tag < header.tag)
                 .map(modification => headerAndValue(modification.tag) ::: header :: Nil)
                 .getOrElse(modificationsLeft
                   .find(_.tag == header.tag)
