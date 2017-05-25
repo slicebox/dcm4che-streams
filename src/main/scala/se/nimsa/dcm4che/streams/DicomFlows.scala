@@ -256,25 +256,23 @@ object DicomFlows {
         {
           case header: DicomHeader =>
             updateSyntax(header)
-            if (sequenceDepth == 0)
-              modificationsLeft
+            if (sequenceDepth == 0) {
+              val inserts = modificationsLeft
                 .filter(_.insert)
-                .find(_.tag < header.tag)
-                .map(modification => headerAndValue(modification.tag) ::: header :: Nil)
-                .getOrElse(modificationsLeft
-                  .find(_.tag == header.tag)
-                  .map { modification =>
-                    currentHeader = Some(header)
-                    value = ByteString.empty
-                    currentModification = Some(modification)
-                    modificationsLeft = modificationsLeft.filterNot(_.tag == header.tag)
-                    Nil
-                  }
-                  .getOrElse(
-                    header :: Nil
-                  )
-                )
-            else
+                .filter(_.tag < header.tag)
+                .flatMap(modification => headerAndValue(modification.tag))
+              val modify = modificationsLeft
+                .find(_.tag == header.tag)
+                .map { modification =>
+                  currentHeader = Some(header)
+                  value = ByteString.empty
+                  currentModification = Some(modification)
+                  modificationsLeft = modificationsLeft.filterNot(_.tag == header.tag)
+                  Nil
+                }
+                .getOrElse(header :: Nil)
+               inserts ::: modify
+            } else
               header :: Nil
           case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
             value = value ++ chunk.bytes

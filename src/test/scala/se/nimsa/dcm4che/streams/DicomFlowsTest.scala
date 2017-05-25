@@ -300,7 +300,6 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
       .expectValueChunk(patientNameJohnDoe.drop(8))
       .expectDicomComplete()
-
   }
 
   it should "insert attributes if not present also at end of dataset" in {
@@ -316,9 +315,27 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
       .expectValueChunk(patientNameJohnDoe.drop(8))
       .expectDicomComplete()
-
   }
 
+  it should "insert all relevant attributes below the current tag number" in {
+    val bytes = patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true),
+        TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
+      .expectValueChunk(studyDate.drop(8))
+      .expectHeader(Tag.SeriesDate, VR.DA, studyDate.length - 8)
+      .expectValueChunk(studyDate.drop(8))
+      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
+      .expectValueChunk(patientNameJohnDoe.drop(8))
+      .expectDicomComplete()
+
+  }
   "The deflate flow" should "recreate the dicom parts of a dataset which has been deflated and inflated again" in {
     val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
 
