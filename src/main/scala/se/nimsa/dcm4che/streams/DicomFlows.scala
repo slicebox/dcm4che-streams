@@ -214,9 +214,9 @@ object DicomFlows {
   case class TagModification(tag: Int, modification: ByteString => ByteString, insert: Boolean)
 
   /**
-    * Simple transformation flow for inserting or overwriting the values of specified attributes. Only modifies or
+    * Simple modification flow for inserting or overwriting the values of specified attributes. Only modifies or
     * inserts attributes in the root dataset, not inside sequences. When inserting a new attribute, the corresponding
-    * transform will be called with an empty `ByteString`.
+    * modification function will be called with an empty `ByteString`.
     *
     * @param modifications Any number of `TagModification`s each specifying a tag number, a modification function, and
     *                      a Boolean indicating whether absent values will be inserted or skipped.
