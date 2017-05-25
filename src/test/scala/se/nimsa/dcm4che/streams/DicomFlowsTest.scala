@@ -254,7 +254,9 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(modifyFlow(insertIfAbsent = false, (Tag.PatientName, _ => mikeBytes), (Tag.StudyDate, _ => ByteString.empty)))
+      .via(modifyFlow(
+        TagModification(Tag.PatientName, _ => mikeBytes, insert = false),
+        TagModification(Tag.StudyDate, _ => ByteString.empty, insert = false)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
@@ -271,7 +273,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(modifyFlow(insertIfAbsent = false, (Tag.PatientName, _ => mikeBytes)))
+      .via(modifyFlow(TagModification(Tag.PatientName, _ => mikeBytes, insert = false)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
@@ -290,7 +292,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(modifyFlow(insertIfAbsent = true, (Tag.StudyDate, _ => studyDate.drop(8))))
+      .via(modifyFlow(TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
@@ -306,7 +308,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(modifyFlow(insertIfAbsent = true, (Tag.PatientName, _ => patientNameJohnDoe.drop(8))))
+      .via(modifyFlow(TagModification(Tag.PatientName, _ => patientNameJohnDoe.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
@@ -324,9 +326,8 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .via(new DicomPartFlow())
       .via(deflateDatasetFlow())
       .via(modifyFlow(
-        insertIfAbsent = false,
-        (Tag.FileMetaInformationGroupLength, _ => fmiGroupLength(tsuidDeflatedExplicitLE)),
-        (Tag.TransferSyntaxUID, _ => tsuidDeflatedExplicitLE.drop(8))))
+        TagModification(Tag.FileMetaInformationGroupLength, _ => fmiGroupLength(tsuidDeflatedExplicitLE), insert = false),
+        TagModification(Tag.TransferSyntaxUID, _ => tsuidDeflatedExplicitLE.drop(8), insert = false)))
       .map(_.bytes)
       .via(new DicomPartFlow())
 
