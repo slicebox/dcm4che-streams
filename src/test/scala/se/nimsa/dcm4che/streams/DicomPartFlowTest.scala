@@ -62,7 +62,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectDicomComplete()
   }
 
-  it should "output an empty value chunk when value length is zero, except if at end of stream" in {
+  it should "output an empty value chunk when value length is zero" in {
     val bytes = ByteString(8, 0, 32, 0, 68, 65, 0, 0) ++ ByteString(16, 0, 16, 0, 80, 78, 0, 0)
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
@@ -71,6 +71,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectHeader(Tag.PatientName)
+      .expectValueChunk()
       .expectDicomComplete()
   }
 
