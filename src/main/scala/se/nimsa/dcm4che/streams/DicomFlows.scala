@@ -260,6 +260,7 @@ object DicomFlows {
               val inserts = modificationsLeft
                 .filter(_.insert)
                 .filter(_.tag < header.tag)
+                .sortBy(_.tag)
                 .flatMap(modification => headerAndValue(modification.tag))
               val modify = modificationsLeft
                 .find(_.tag == header.tag)

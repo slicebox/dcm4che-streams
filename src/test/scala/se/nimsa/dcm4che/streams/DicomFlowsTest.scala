@@ -323,8 +323,8 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
       .via(modifyFlow(
-        TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true),
-        TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true)))
+        TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true),
+        TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
