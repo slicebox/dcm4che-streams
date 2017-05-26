@@ -234,10 +234,12 @@ object DicomFlows {
           var sequenceDepth = 0
           var bigEndian = false
           var explicitVR = true
+          var hasAttributes = false
 
           def updateSyntax(header: DicomHeader): Unit = {
             bigEndian = header.bigEndian
             explicitVR = header.explicitVR
+            hasAttributes = true
           }
 
           def headerAndValue(tag: Int): List[DicomPart] = {
@@ -291,11 +293,13 @@ object DicomFlows {
           case s: DicomSequenceDelimitation =>
             sequenceDepth -= 1
             s :: Nil
-          case DicomEndMarker =>
+          case DicomEndMarker if hasAttributes =>
             modificationsLeft
               .filter(_.insert)
               .sortBy(_.tag)
               .flatMap(modification => headerAndValue(modification.tag))
+          case DicomEndMarker =>
+            Nil
           case part =>
             part :: Nil
         }

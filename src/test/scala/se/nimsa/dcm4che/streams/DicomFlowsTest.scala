@@ -334,8 +334,17 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
       .expectValueChunk(patientNameJohnDoe.drop(8))
       .expectDicomComplete()
-
   }
+
+  it should "not insert attributes if dataset contains no attributes" in {
+    val source = Source.empty
+      .via(new DicomPartFlow())
+      .via(modifyFlow(TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectDicomComplete()
+  }
+
   "The deflate flow" should "recreate the dicom parts of a dataset which has been deflated and inflated again" in {
     val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
 
