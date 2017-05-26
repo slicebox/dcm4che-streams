@@ -21,6 +21,7 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
+import org.dcm4che3.data.{StandardElementDictionary, VR}
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
@@ -205,38 +206,100 @@ object DicomFlows {
   def validateFlowWithContext(contexts: Seq[ValidationContext]) = Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 
   /**
-    * Simple transformation flow for mapping the values of certain attributes to new values. The application is "flat"
-    * in the sense that attributes are transformed no matter if they are part of sequences or not.
-    *
-    * @param transforms Each transform is a 2-tuple of tag number and value transform
-    * @return the transformed flow of DICOM parts
+    * Class used to specify modifications to individual attributes of a dataset
+    * @param tag tag number
+    * @param modification a modification function
+    * @param insert if tag is absent in dataset it will be created and inserted when `true`
     */
-  def attributesTransformFlow(transforms: (Int, ByteString => ByteString)*) = Flow[DicomPart].statefulMapConcat {
-    () =>
-      val tags = transforms.map(_._1)
-      var value = ByteString.empty
-      var headerMaybe: Option[DicomHeader] = None
-      var transformMaybe: Option[ByteString => ByteString] = None
+  case class TagModification(tag: Int, modification: ByteString => ByteString, insert: Boolean)
 
-    {
-      case header: DicomHeader if tags.contains(header.tag) =>
-        headerMaybe = Some(header)
-        value = ByteString.empty
-        transformMaybe = transforms.find(_._1 == header.tag).map(_._2)
-        Nil
-      case chunk: DicomValueChunk if transformMaybe.isDefined && headerMaybe.isDefined =>
-        value = value ++ chunk.bytes
-        if (chunk.last) {
-          val newValue = transformMaybe.map(t => t(value)).getOrElse(value)
-          val newHeader = headerMaybe.map(header => header.withUpdatedLength(newValue.length.toShort)).get
-          transformMaybe = None
-          headerMaybe = None
-          newHeader :: DicomValueChunk(chunk.bigEndian, newValue, last = true) :: Nil
-        } else
-          Nil
-      case dicomPart => dicomPart :: Nil
-    }
-  }
+  /**
+    * Simple modification flow for inserting or overwriting the values of specified attributes. Only modifies or
+    * inserts attributes in the root dataset, not inside sequences. When inserting a new attribute, the corresponding
+    * modification function will be called with an empty `ByteString`.
+    *
+    * @param modifications Any number of `TagModification`s each specifying a tag number, a modification function, and
+    *                      a Boolean indicating whether absent values will be inserted or skipped.
+    * @return the modified flow of DICOM parts
+    */
+  def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
+    Flow[DicomPart]
+      .concat(Source.single(DicomEndMarker))
+      .statefulMapConcat {
+        () =>
+          var modificationsLeft = modifications.toList
+          var value = ByteString.empty
+          var currentHeader: Option[DicomHeader] = None
+          var currentModification: Option[TagModification] = None
+          var sequenceDepth = 0
+          var bigEndian = false
+          var explicitVR = true
+
+          def updateSyntax(header: DicomHeader): Unit = {
+            bigEndian = header.bigEndian
+            explicitVR = header.explicitVR
+          }
+
+          def headerAndValue(tag: Int): List[DicomPart] = {
+            val modification = modifications.find(_.tag == tag).map(_.modification).head
+            val valueBytes = modification(ByteString.empty)
+            val dictVr = StandardElementDictionary.INSTANCE.vrOf(tag)
+            if (dictVr == VR.SQ) throw new IllegalArgumentException("Cannot insert sequence attributes")
+            val vr = if (dictVr == VR.UN) VR.LO else dictVr
+            val isFmi = DicomParsing.isFileMetaInformation(tag)
+            val header = DicomHeader(tag, vr, valueBytes.length, isFmi, bigEndian, explicitVR)
+            val value = DicomValueChunk(bigEndian, valueBytes, last = true)
+            modificationsLeft = modificationsLeft.filterNot(_.tag == tag)
+            header :: value :: Nil
+          }
+
+        {
+          case header: DicomHeader =>
+            updateSyntax(header)
+            if (sequenceDepth == 0) {
+              val inserts = modificationsLeft
+                .filter(_.insert)
+                .filter(_.tag < header.tag)
+                .sortBy(_.tag)
+                .flatMap(modification => headerAndValue(modification.tag))
+              val modify = modificationsLeft
+                .find(_.tag == header.tag)
+                .map { modification =>
+                  currentHeader = Some(header)
+                  value = ByteString.empty
+                  currentModification = Some(modification)
+                  modificationsLeft = modificationsLeft.filterNot(_.tag == header.tag)
+                  Nil
+                }
+                .getOrElse(header :: Nil)
+               inserts ::: modify
+            } else
+              header :: Nil
+          case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
+            value = value ++ chunk.bytes
+            if (chunk.last) {
+              val newValue = currentModification.get.modification(value)
+              val newHeader = currentHeader.get.withUpdatedLength(newValue.length.toShort)
+              currentModification = None
+              currentHeader = None
+              newHeader :: DicomValueChunk(bigEndian, newValue, last = true) :: Nil
+            } else
+              Nil
+          case s: DicomSequence =>
+            sequenceDepth += 1
+            s :: Nil
+          case s: DicomSequenceDelimitation =>
+            sequenceDepth -= 1
+            s :: Nil
+          case DicomEndMarker =>
+            modificationsLeft
+              .filter(_.insert)
+              .sortBy(_.tag)
+              .flatMap(modification => headerAndValue(modification.tag))
+          case part =>
+            part :: Nil
+        }
+      }
 
   /**
     * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in DicomPartFlow
@@ -368,7 +431,7 @@ object DicomFlows {
                 currentAttribute = Some(DicomAttribute(header, Seq.empty))
                 Nil
 
-              case header: DicomHeader =>
+              case _: DicomHeader =>
                 currentAttribute = None
                 Nil
 

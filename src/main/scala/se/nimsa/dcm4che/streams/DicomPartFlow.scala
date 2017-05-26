@@ -94,7 +94,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val (tag, vr, headerLength, valueLength) = readHeader(reader, state)
         if (groupNumber(tag) != 2) {
           log.warning("Missing or wrong File Meta Information Group Length (0002,0000)")
-          ParseResult(None, toDatasetStep(ByteString(0,0), state))
+          ParseResult(None, toDatasetStep(ByteString(0, 0), state))
         } else {
           // no meta attributes can lead to vr = null
           val updatedVr = if (vr == VR.UN) ElementDictionary.getStandardElementDictionary.vrOf(tag) else vr
@@ -125,20 +125,20 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             case None =>
               InFmiHeader(updatedState)
           }
-          ParseResult(part, InValue(ValueState(updatedState.bigEndian, valueLength, nextStep)))
+          ParseResult(part, InValue(ValueState(updatedState.bigEndian, valueLength, nextStep)), acceptUpstreamFinish = false)
         }
       }
     }
 
     case class InDatasetHeader(state: DatasetHeaderState, inflater: Option[InflateData]) extends DicomParseStep {
       def parse(reader: ByteReader) = {
-        val attribute = readDatasetHeader(reader, state)
-        val nextState = attribute.map {
+        val part = readDatasetHeader(reader, state)
+        val nextState = part.map {
           case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
           case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(bigEndian, state.explicitVR), inflater)
           case _ => InDatasetHeader(state, inflater)
         }.getOrElse(FinishedParser)
-        ParseResult(attribute, nextState)
+        ParseResult(part, nextState, acceptUpstreamFinish = !nextState.isInstanceOf[InValue])
       }
     }
 
@@ -156,6 +156,13 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         }
         parseResult
       }
+      override def onTruncation(reader: ByteReader): Unit =
+        if (reader.hasRemaining)
+          super.onTruncation(reader)
+        else {
+          emit(objOut, DicomValueChunk(state.bigEndian, ByteString.empty, last = true))
+          completeStage()
+        }
     }
 
     case class InFragments(state: FragmentsState, inflater: Option[InflateData]) extends DicomParseStep {
