@@ -1,5 +1,4 @@
 import de.heikoseeberger.sbtheader.license.Apache2_0
-
 name := "dcm4che-streams"
 version := "0.3"
 organization := "se.nimsa"
