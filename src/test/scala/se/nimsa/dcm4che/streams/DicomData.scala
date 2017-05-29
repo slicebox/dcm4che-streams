@@ -48,6 +48,7 @@ object DicomData {
   val tsuidExplicitBE = ByteString(2, 0, 16, 0, 85, 73, 20, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '2', 0)
   val tsuidImplicitLE = ByteString(2, 0, 16, 0, 85, 73, 18, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', 0)
   val tsuidDeflatedExplicitLE = ByteString(2, 0, 16, 0, 85, 73, 22, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', '.', '9', '9')
+  val tsuidExplicitLESelfImplicit = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
   val patientNameJohnDoe = ByteString(16, 0, 16, 0, 80, 78, 8, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
   val patientNameJohnDoeBE = ByteString(0, 16, 0, 16, 80, 78, 0, 8, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
   val patientNameJohnDoeImplicit = ByteString(16, 0, 16, 0, 8, 0, 0, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')

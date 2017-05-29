@@ -62,6 +62,19 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectDicomComplete()
   }
 
+  it should "output an empty value chunk when value length is zero" in {
+    val bytes = ByteString(8, 0, 32, 0, 68, 65, 0, 0) ++ ByteString(16, 0, 16, 0, 80, 78, 0, 0)
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
   it should "output a warning message when non-meta information is included in the header" in {
     val bytes = fmiGroupLength(tsuidExplicitLE, studyDate) ++ tsuidExplicitLE ++ studyDate
 
@@ -365,6 +378,21 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectValueChunk()
       .expectDeflatedChunk()
       .expectDeflatedChunk()
+      .expectDicomComplete()
+  }
+
+  it should "accept meta information encoded with implicit VR" in {
+    val bytes = preamble ++ tsuidExplicitLESelfImplicit ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
       .expectDicomComplete()
   }
 }
