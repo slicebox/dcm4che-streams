@@ -21,7 +21,7 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
-import org.dcm4che3.data.{StandardElementDictionary, VR}
+import org.dcm4che3.data.{StandardElementDictionary, Tag, VR}
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
@@ -95,6 +95,14 @@ object DicomFlows {
   def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains(_))
 
   /**
+    * Filter a stream of dicom parts such that attributes with tags in the black list are discarded.
+    *
+    * @param tagsBlacklist list of tags to discard.
+    * @return the associated filter Flow
+    */
+  def blacklistFilter(tagsBlacklist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] = blacklistFilter(tagsBlacklist.contains(_))
+
+  /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
     * file meta information group length, will be discarded. Group Length (gggg,0000) Standard Data Elements
     * have been retired in the standard.
@@ -124,7 +132,7 @@ object DicomFlows {
     *
     * @param tagCondition whitelist condition
     * @param keepPreamble true if preamble should be kept, else false
-    * @return Flow  of filtered parts
+    * @return Flow of filtered parts
     */
   def whitelistFilter(tagCondition: (Int) => Boolean, keepPreamble: Boolean = false): Flow[DicomPart, DicomPart, NotUsed] = tagFilter(tagCondition, isWhitelist = true, keepPreamble)
 
@@ -207,9 +215,10 @@ object DicomFlows {
 
   /**
     * Class used to specify modifications to individual attributes of a dataset
-    * @param tag tag number
+    *
+    * @param tag          tag number
     * @param modification a modification function
-    * @param insert if tag is absent in dataset it will be created and inserted when `true`
+    * @param insert       if tag is absent in dataset it will be created and inserted when `true`
     */
   case class TagModification(tag: Int, modification: ByteString => ByteString, insert: Boolean)
 
@@ -274,7 +283,7 @@ object DicomFlows {
                   Nil
                 }
                 .getOrElse(header :: Nil)
-               inserts ::: modify
+              inserts ::: modify
             } else
               header :: Nil
           case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
@@ -311,7 +320,7 @@ object DicomFlows {
     * attributes. At that stage, in order to maintain valid DICOM information, one can either change the transfer syntax to
     * an appropriate value for non-deflated data, or deflate the data again. This flow helps with the latter.
     *
-    * @return
+    * @return the associated DicomPart Flow
     */
   def deflateDatasetFlow() = Flow[DicomPart]
     .concat(Source.single(DicomEndMarker))
@@ -462,5 +471,52 @@ object DicomFlows {
             }
         }
       }
+
+  /**
+    * Remove attributes from stream that may contain large quantities of data (bulk data)
+    * @return the associated DicomPart Flow
+    */
+  val bulkDataFilter = Flow[DicomPart]
+    .statefulMapConcat {
+
+      def normalizeRepeatingGroup(tag: Int) = {
+        val gg000000 = tag & 0xffe00000
+        if (gg000000 == 0x50000000 || gg000000 == 0x60000000) tag & 0xffe0ffff else tag
+      }
+
+      () =>
+        var sequenceStack = Seq.empty[DicomSequence]
+        var discarding = false
+
+      {
+        case sq: DicomSequence =>
+          sequenceStack = sq +: sequenceStack
+          sq :: Nil
+        case sqd: DicomSequenceDelimitation =>
+          sequenceStack = sequenceStack.drop(1)
+          sqd :: Nil
+        case dh: DicomHeader =>
+          discarding =
+            normalizeRepeatingGroup(dh.tag) match {
+              case Tag.PixelDataProviderURL => true
+              case Tag.AudioSampleData => true
+              case Tag.CurveData => true
+              case Tag.SpectroscopyData => true
+              case Tag.OverlayData => true
+              case Tag.EncapsulatedDocument => true
+              case Tag.FloatPixelData => true
+              case Tag.DoubleFloatPixelData => true
+              case Tag.PixelData => sequenceStack.isEmpty
+              case Tag.WaveformData => sequenceStack.length == 1 && sequenceStack.head.tag == Tag.WaveformSequence
+              case _ => false
+            }
+          if (discarding) Nil else dh :: Nil
+        case dvc: DicomValueChunk =>
+          if (discarding) Nil else dvc :: Nil
+        case p: DicomPart =>
+          discarding = false
+          p :: Nil
+      }
+    }
 
 }

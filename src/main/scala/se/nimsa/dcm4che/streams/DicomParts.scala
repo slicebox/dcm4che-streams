@@ -71,7 +71,7 @@ object DicomParts {
   }
 
   case class DicomValueChunk(bigEndian: Boolean, bytes: ByteString, last: Boolean) extends DicomPart {
-    override def toString = s"DicomValueChunk ${if (last) "(last) " else ""}length = ${bytes.length} ${if (bigEndian) "(big endian) " else ""}ASCII = '${new String(bytes.toArray, "US-ASCII")}' $bytes"
+    override def toString = s"DicomValueChunk ${if (last) "(last) " else ""}length = ${bytes.length} ${if (bigEndian) "(big endian) " else ""}ASCII = '${bytes.utf8String}' $bytes"
   }
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
