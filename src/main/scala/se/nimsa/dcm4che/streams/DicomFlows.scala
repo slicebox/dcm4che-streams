@@ -474,6 +474,9 @@ object DicomFlows {
 
   /**
     * Remove attributes from stream that may contain large quantities of data (bulk data)
+    *
+    * Rules ported from [[https://github.com/dcm4che/dcm4che/blob/3.3.8/dcm4che-core/src/main/java/org/dcm4che3/io/BulkDataDescriptor.java#L58 dcm4che]].
+    * Defined [[http://dicom.nema.org/medical/dicom/current/output/html/part04.html#table_Z.1-1 here in the DICOM standard]].
     * @return the associated DicomPart Flow
     */
   val bulkDataFilter = Flow[DicomPart]
