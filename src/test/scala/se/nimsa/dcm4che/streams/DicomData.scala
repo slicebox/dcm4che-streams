@@ -64,6 +64,7 @@ object DicomData {
   val pixeDataFragments = ByteString(224, 127, 16, 0, 79, 87, 0, 0, 255, 255, 255, 255) // VR = OW, length = -1
 
   val seqStart = ByteString(0x08, 0x00, 0x15, 0x92, 'S', 'Q', 0, 0, -1, -1, -1, -1)
+  val waveformSeqStart = ByteString(0x00, 0x54, 0x00, 0x01, 'S', 'Q', 0, 0, -1, -1, -1, -1)
 
   // file meta with wrong transfer syntax:
   // implicit little endian (not conforming to standard)
@@ -73,6 +74,7 @@ object DicomData {
   val tsuidExplicitLEImplicitLE = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
 
   def pixelData(length: Int) = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x42, 0, 0) ++ DicomParsing.intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
+  def waveformData(length: Int) = ByteString(0x00, 0x54, 0x10, 0x10, 0x4f, 0x42, 0, 0) ++ DicomParsing.intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
 
 
   implicit class DicomPartProbe(probe: TestSubscriber.Probe[DicomPart]) {

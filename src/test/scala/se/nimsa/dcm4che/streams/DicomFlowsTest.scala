@@ -209,7 +209,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
       .via(new DicomPartFlow())
-      .via(blacklistFilter(DicomParsing.isPrivateAttribute))
+      .via(blacklistFilter(DicomParsing.isPrivateAttribute _))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -474,6 +474,64 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectValueChunk()
       .expectValueChunk()
       .expectValueChunk()
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  "The buld data filter flow" should "remove pixel data" in {
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ pixelData(1000)
+
+    val source = Source.single(bytes)
+      .via(DicomPartFlow.partFlow)
+      .via(bulkDataFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "not remove pixel data in sequences" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ pixelData(100) ++ itemEnd ++ seqEnd
+
+    val source = Source.single(bytes)
+      .via(DicomPartFlow.partFlow)
+      .via(bulkDataFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.PixelData)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
+  it should "only remove waveform data when inside waveform sequence" in {
+    val bytes = waveformSeqStart ++ itemNoLength ++ patientNameJohnDoe ++ waveformData(100) ++ itemEnd ++ seqEnd ++ patientNameJohnDoe ++ waveformData(100)
+
+    val source = Source.single(bytes)
+      .via(DicomPartFlow.partFlow)
+      .via(bulkDataFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.WaveformSequence)
+      .expectItem()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.WaveformData)
       .expectValueChunk()
       .expectDicomComplete()
   }
