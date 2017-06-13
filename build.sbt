@@ -1,9 +1,7 @@
-import de.heikoseeberger.sbtheader.license.Apache2_0
 name := "dcm4che-streams"
 version := "0.4-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.2"
-crossScalaVersions := Seq("2.11.8", "2.12.2")
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
 
 // define the project
@@ -19,13 +17,13 @@ resolvers ++= Seq(
 // deps
 
 libraryDependencies ++= {
-  val akkaVersion = "2.4.17"
+  val akkaVersion = "2.5.2"
   Seq(
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-    "org.slf4j" % "slf4j-simple" % "1.7.22",
+    "org.slf4j" % "slf4j-simple" % "1.7.25",
     "org.dcm4che" % "dcm4che-core" % "3.3.8" % "provided",
-    "org.scalatest" %% "scalatest" % "3.0.1" % "test",
+    "org.scalatest" %% "scalatest" % "3.0.3" % "test",
     "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % "test"
   )
 }
@@ -34,7 +32,9 @@ updateOptions := updateOptions.value.withCachedResolution(true)
 
 // for automatic license stub generation
 
-headers := Map("scala" -> Apache2_0("2017", "Lars Edenbrandt"))
+organizationName := "Lars Edenbrandt"
+startYear := Some(2017)
+licenses += ("Apache-2.0", new URL("https://www.apache.org/licenses/LICENSE-2.0.txt"))
 
 // publish
 publishMavenStyle := true
