@@ -4,10 +4,6 @@ organization := "se.nimsa"
 scalaVersion := "2.12.2"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
 
-// define the project
-
-lazy val root = (project in file(".")).enablePlugins(GitBranchPrompt)
-
 // repos
 
 resolvers ++= Seq(
