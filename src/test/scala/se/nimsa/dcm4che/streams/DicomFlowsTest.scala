@@ -17,7 +17,8 @@ import se.nimsa.dcm4che.streams.DicomParts.{DicomAttributes, DicomPart}
 class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers {
 
   import DicomData._
-  import se.nimsa.dcm4che.streams.DicomFlows._
+  import DicomFlows._
+  import DicomModifyFlow._
 
   implicit val materializer = ActorMaterializer()
   implicit val ec = system.dispatcher
@@ -247,104 +248,6 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
-  "The modify flow" should "modify the value of the specified attributes" in {
-    val bytes = patientNameJohnDoe ++ studyDate
-
-    val mikeBytes = ByteString('M', 'i', 'k', 'e')
-
-    val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(modifyFlow(
-        TagModification(Tag.PatientName, _ => mikeBytes, insert = false),
-        TagModification(Tag.StudyDate, _ => ByteString.empty, insert = false)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
-      .expectValueChunk(mikeBytes)
-      .expectHeader(Tag.StudyDate, VR.DA, 0)
-      .expectValueChunk(ByteString.empty)
-      .expectDicomComplete()
-  }
-
-  it should "not modify attributes in sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
-
-    val mikeBytes = ByteString('M', 'i', 'k', 'e')
-
-    val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(modifyFlow(TagModification(Tag.PatientName, _ => mikeBytes, insert = false)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem()
-      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
-      .expectValueChunk(patientNameJohnDoe.drop(8))
-      .expectHeader(Tag.StudyDate)
-      .expectValueChunk()
-      .expectItemDelimitation()
-      .expectSequenceDelimitation()
-      .expectDicomComplete()
-  }
-
-  it should "insert attributes if not present" in {
-    val bytes = patientNameJohnDoe
-
-    val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(modifyFlow(TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
-      .expectValueChunk(studyDate.drop(8))
-      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
-      .expectValueChunk(patientNameJohnDoe.drop(8))
-      .expectDicomComplete()
-  }
-
-  it should "insert attributes if not present also at end of dataset" in {
-    val bytes = studyDate
-
-    val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(modifyFlow(TagModification(Tag.PatientName, _ => patientNameJohnDoe.drop(8), insert = true)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
-      .expectValueChunk(studyDate.drop(8))
-      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
-      .expectValueChunk(patientNameJohnDoe.drop(8))
-      .expectDicomComplete()
-  }
-
-  it should "insert all relevant attributes below the current tag number" in {
-    val bytes = patientNameJohnDoe
-
-    val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(modifyFlow(
-        TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true),
-        TagModification(Tag.StudyDate, _ => studyDate.drop(8), insert = true)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectHeader(Tag.StudyDate, VR.DA, studyDate.length - 8)
-      .expectValueChunk(studyDate.drop(8))
-      .expectHeader(Tag.SeriesDate, VR.DA, studyDate.length - 8)
-      .expectValueChunk(studyDate.drop(8))
-      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
-      .expectValueChunk(patientNameJohnDoe.drop(8))
-      .expectDicomComplete()
-  }
-
-  it should "not insert attributes if dataset contains no attributes" in {
-    val source = Source.empty
-      .via(new DicomPartFlow())
-      .via(modifyFlow(TagModification(Tag.SeriesDate, _ => studyDate.drop(8), insert = true)))
-
-    source.runWith(TestSink.probe[DicomPart])
-      .expectDicomComplete()
-  }
-
   "The deflate flow" should "recreate the dicom parts of a dataset which has been deflated and inflated again" in {
     val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ studyDate
 
@@ -352,8 +255,8 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .via(new DicomPartFlow())
       .via(deflateDatasetFlow())
       .via(modifyFlow(
-        TagModification(Tag.FileMetaInformationGroupLength, _ => fmiGroupLength(tsuidDeflatedExplicitLE), insert = false),
-        TagModification(Tag.TransferSyntaxUID, _ => tsuidDeflatedExplicitLE.drop(8), insert = false)))
+        TagModification(TagPath.fromTag(Tag.FileMetaInformationGroupLength), _ => fmiGroupLength(tsuidDeflatedExplicitLE), insert = false),
+        TagModification(TagPath.fromTag(Tag.TransferSyntaxUID), _ => tsuidDeflatedExplicitLE.drop(8), insert = false)))
       .map(_.bytes)
       .via(new DicomPartFlow())
 
@@ -478,7 +381,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
-  "The buld data filter flow" should "remove pixel data" in {
+  "The bulk data filter flow" should "remove pixel data" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ pixelData(1000)
 
     val source = Source.single(bytes)
@@ -505,7 +408,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem()
+      .expectItem(0)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectHeader(Tag.PixelData)
@@ -524,7 +427,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.WaveformSequence)
-      .expectItem()
+      .expectItem(0)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectItemDelimitation()

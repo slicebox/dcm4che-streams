@@ -1,0 +1,135 @@
+package se.nimsa.dcm4che.streams
+
+import akka.NotUsed
+import akka.stream.scaladsl.{Flow, Source}
+import akka.util.ByteString
+import org.dcm4che3.data.{StandardElementDictionary, VR}
+import se.nimsa.dcm4che.streams.DicomParts._
+import se.nimsa.dcm4che.streams.TagPath.{TagPathSequence, TagPathTag}
+
+object DicomModifyFlow {
+
+  /**
+    * Class used to specify modifications to individual attributes of a dataset
+    *
+    * @param tagPath      tag path
+    * @param modification a modification function
+    * @param insert       if tag is absent in dataset it will be created and inserted when `true`
+    */
+  case class TagModification(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean)
+
+  /**
+    * Simple modification flow for inserting or overwriting the values of specified attributes. Only modifies or
+    * inserts attributes in the root dataset, not inside sequences. When inserting a new attribute, the corresponding
+    * modification function will be called with an empty `ByteString`.
+    *
+    * @param modifications Any number of `TagModification`s each specifying a tag path, a modification function, and
+    *                      a Boolean indicating whether absent values will be inserted or skipped.
+    * @return the modified flow of DICOM parts
+    */
+  def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
+    Flow[DicomPart]
+      .concat(Source.single(DicomEndMarker))
+      .statefulMapConcat {
+        () =>
+          var modificationsLeft = modifications
+            .toList
+            .filterNot(_.tagPath.isSequence)
+            .sortWith((a, b) => a.tagPath < b.tagPath)
+
+          var currentModification: Option[TagModification] = None // current modification
+        var currentHeader: Option[DicomHeader] = None // header of current attribute being modified
+        var value = ByteString.empty // value of current attribute being modified
+        var bigEndian = false // endinaness of current attribute
+        var explicitVR = true // VR representation of current attribute
+
+          var tagPathSequence: Option[TagPathSequence] = None // current sequence path. None = currently in root dataset
+
+          var hasAttributes = false // check if empty dataset
+
+          def updateSyntax(header: DicomHeader): Unit = {
+            bigEndian = header.bigEndian
+            explicitVR = header.explicitVR
+            hasAttributes = true
+          }
+
+          def headerAndValue(tagPath: TagPath, modification: ByteString => ByteString): List[DicomPart] = {
+
+            // check that modification is part of current sequence
+            val currentSequencePath = tagPathSequence.map(_.toList.map(_.tag)).getOrElse(Nil)
+            val modSequencePath = tagPath.previous.map(_.toList.map(_.tag)).getOrElse(Nil)
+            val modIsInSequence = currentSequencePath == modSequencePath
+
+            if (modIsInSequence) {
+              val valueBytes = modification(ByteString.empty)
+              val vr = StandardElementDictionary.INSTANCE.vrOf(tagPath.tag)
+              if (vr == VR.UN) throw new IllegalArgumentException("Tag is not present in dictionary, cannot determine value representation")
+              if (vr == VR.SQ) throw new IllegalArgumentException("Cannot insert sequence attributes")
+              val isFmi = DicomParsing.isFileMetaInformation(tagPath.tag)
+              val header = DicomHeader(tagPath.tag, vr, valueBytes.length, isFmi, bigEndian, explicitVR)
+              val value = DicomValueChunk(bigEndian, valueBytes, last = true)
+              header :: value :: Nil
+            } else
+              Nil
+          }
+
+        {
+          case header: DicomHeader =>
+            updateSyntax(header)
+            val tagPath = tagPathSequence.map(_.thenTag(header.tag)).getOrElse(TagPath.fromTag(header.tag))
+            val insertModifications = modificationsLeft
+              .filter(_.insert)
+              .filter(_.tagPath < tagPath)
+            val inserts = insertModifications
+              .flatMap(tagModification => headerAndValue(tagModification.tagPath, tagModification.modification))
+            val modifyModification = modificationsLeft
+              .find(_.tagPath.contains(tagPath))
+            val modify = modifyModification
+              .map { tagModification =>
+                currentHeader = Some(header)
+                value = ByteString.empty
+                currentModification = Some(tagModification)
+                Nil
+              }
+              .getOrElse(header :: Nil)
+            modificationsLeft = modificationsLeft.filterNot(m => insertModifications.contains(m) || modifyModification.contains(m))
+            inserts ::: modify
+          case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
+            value = value ++ chunk.bytes
+            if (chunk.last) {
+              val newValue = currentModification.get.modification(value)
+              val newHeader = currentHeader.get.withUpdatedLength(newValue.length.toShort)
+              currentModification = None
+              currentHeader = None
+              newHeader :: DicomValueChunk(bigEndian, newValue, last = true) :: Nil
+            } else
+              Nil
+          case sequence: DicomSequence =>
+            tagPathSequence = tagPathSequence.map(_.thenSequence(sequence.tag)).orElse(Some(TagPath.fromSequence(sequence.tag)))
+            sequence :: Nil
+          case sequenceDelimitation: DicomSequenceDelimitation =>
+            tagPathSequence = tagPathSequence.flatMap(_.previous)
+            sequenceDelimitation :: Nil
+          case fragments: DicomFragments =>
+            tagPathSequence = tagPathSequence.map(_.thenSequence(fragments.tag)).orElse(Some(TagPath.fromSequence(fragments.tag)))
+            fragments :: Nil
+          case fragmentsDelimitation: DicomFragmentsDelimitation =>
+            tagPathSequence = tagPathSequence.flatMap(_.previous)
+            fragmentsDelimitation :: Nil
+          case item: DicomItem =>
+            tagPathSequence = tagPathSequence.flatMap(s => s.previous.map(_.thenSequence(s.tag, item.index)).orElse(Some(TagPath.fromSequence(s.tag, item.index))))
+            item :: Nil
+          case itemDelimitation: DicomItemDelimitation =>
+            itemDelimitation :: Nil
+          case DicomEndMarker if hasAttributes =>
+            modificationsLeft
+              .filter(_.insert)
+              .flatMap(tagModification => headerAndValue(tagModification.tagPath, tagModification.modification))
+          case DicomEndMarker =>
+            Nil
+          case part =>
+            part :: Nil
+        }
+      }
+
+}
