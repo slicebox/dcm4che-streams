@@ -28,10 +28,9 @@ sealed trait TagPath {
 
   /**
     * Test if this tag path is less than the input path, comparing their parts pairwise according to the following rules
-    *  (1) if the tag number is less than other tag number - return `true`
-    *  (2) if sequences and tag numbers are equal compare item numbers. Wildcard items are considered both greater and smaller
-    * than a specific index. Therefore, a wildcard item is less than a specific item, and a specific item is less than a wildcar
-    * item.
+    *  (1) a is less than b if the a's tag number is less b's tag number
+    *  (2) a is less than b if tag numbers are equal and a's item index is less than b's item index
+    *  (3) a is less than b if tag numbers are equal, a points to an item index and b points to all indices (wildcard)
     *
     * @param that the tag path to compare with
     * @return `true` if this tag path is less than the input path
@@ -50,7 +49,7 @@ sealed trait TagPath {
               }
             case None =>
               thatPath.item match {
-                case Some(_) => true
+                case Some(_) => false
                 case None => false
               }
           }

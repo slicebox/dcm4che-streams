@@ -91,10 +91,10 @@ class TagPathTest extends FlatSpec with Matchers {
     aPath < bPath shouldBe true
   }
 
-  it should "define wildcard items as both less than and greater than specific items" in {
+  it should "sort paths with equal tag number by item index, with index less than wildcard" in {
     val aPath = TagPath.fromSequence(1).thenSequence(1).thenSequence(1).thenTag(2)
     val bPath = TagPath.fromSequence(1).thenSequence(1, 3).thenSequence(1).thenTag(2)
-    aPath < bPath shouldBe true
+    aPath < bPath shouldBe false
     bPath < aPath shouldBe true
   }
 
