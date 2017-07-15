@@ -55,7 +55,7 @@ class TagPathTest extends FlatSpec with Matchers {
     path < path shouldBe false
   }
 
-  it should "return 0 when comparing two equivalent tag paths" in {
+  it should "return false when comparing two equivalent tag paths" in {
     val aPath = TagPath.fromSequence(1).thenSequence(1, 3).thenSequence(1).thenTag(2)
     val bPath = TagPath.fromSequence(1).thenSequence(1, 3).thenSequence(1).thenTag(2)
     aPath < bPath shouldBe false
@@ -83,6 +83,19 @@ class TagPathTest extends FlatSpec with Matchers {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3)
     aPath < bPath shouldBe false
+  }
+
+  it should "sort by item number in otherwise equivalent paths" in {
+    val aPath = TagPath.fromSequence(1).thenSequence(1, 2).thenSequence(1).thenTag(2)
+    val bPath = TagPath.fromSequence(1).thenSequence(1, 3).thenSequence(1).thenTag(2)
+    aPath < bPath shouldBe true
+  }
+
+  it should "define wildcard items as both less than and greater than specific items" in {
+    val aPath = TagPath.fromSequence(1).thenSequence(1).thenSequence(1).thenTag(2)
+    val bPath = TagPath.fromSequence(1).thenSequence(1, 3).thenSequence(1).thenTag(2)
+    aPath < bPath shouldBe true
+    bPath < aPath shouldBe true
   }
 
   "Two tag paths" should "be equal if they point to the same path" in {
@@ -121,9 +134,9 @@ class TagPathTest extends FlatSpec with Matchers {
     aPath.contains(bPath) shouldBe true
   }
 
-  it should "return false when path lengths do not match" in {
-    val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
-    val bPath = TagPath.fromSequence(1).thenSequence(2).thenTag(4)
+  it should "return false when contained path is longer that enclosing path" in {
+    val aPath = TagPath.fromSequence(1).thenSequence(2).thenTag(4)
+    val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     aPath.contains(bPath) shouldBe false
   }
 
@@ -142,6 +155,24 @@ class TagPathTest extends FlatSpec with Matchers {
   it should "return false when a path with wildcards contain a path with item indices" in {
     val aPath = TagPath.fromSequence(2, 4).thenSequence(3, 66).thenTag(4)
     val bPath = TagPath.fromSequence(2).thenSequence(3).thenTag(4)
+    aPath.contains(bPath) shouldBe false
+  }
+
+  it should "return true when contained path is subset of enclosing path" in {
+    val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
+    val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3)
+    aPath.contains(bPath) shouldBe true
+  }
+
+  it should "return true when contained path is subset of enclosing path with item indices" in {
+    val aPath = TagPath.fromSequence(1).thenSequence(2, 4).thenSequence(3).thenTag(4)
+    val bPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3)
+    aPath.contains(bPath) shouldBe true
+  }
+
+  it should "return false when contained path has wildcards enclosing path does not" in {
+    val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3).thenTag(4)
+    val bPath = TagPath.fromSequence(1).thenSequence(2, 4).thenSequence(3)
     aPath.contains(bPath) shouldBe false
   }
 }

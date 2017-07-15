@@ -262,7 +262,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       } else
         tag match {
           case 0xFFFEE000 => Some(DicomItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(8)))
-          case 0xFFFEE00D => Some(DicomItemDelimitation(state.itemIndex - 1, state.bigEndian, reader.take(8)))
+          case 0xFFFEE00D => Some(DicomItemDelimitation(state.itemIndex, state.bigEndian, reader.take(8)))
           case 0xFFFEE0DD => Some(DicomSequenceDelimitation(state.bigEndian, reader.take(8)))
           case _ => Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength))) // cannot happen
         }

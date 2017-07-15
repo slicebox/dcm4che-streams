@@ -27,17 +27,59 @@ sealed trait TagPath {
   }
 
   /**
-    * Test if this tag path is less than the input path, comparing their tag numbers pairwise from the root to the leaves
+    * Test if this tag path is less than the input path, comparing their parts pairwise according to the following rules
+    *  (1) if the tag number is less than other tag number - return `true`
+    *  (2) if sequences and tag numbers are equal compare item numbers. Wildcard items are considered both greater and smaller
+    * than a specific index. Therefore, a wildcard item is less than a specific item, and a specific item is less than a wildcar
+    * item.
+    *
     * @param that the tag path to compare with
     * @return `true` if this tag path is less than the input path
     */
   def <(that: TagPath): Boolean = {
-    val thisList = this.toList.map(_.tag)
-    val thatList = that.toList.map(_.tag)
+    val thisList = this.toList
+    val thatList = that.toList
     thisList.zip(thatList)
-      .find { case (thisTag, thatTag) => thisTag != thatTag }
-      .map { case (thisTag, thatTag) => thisTag < thatTag }
+      .find {
+        case (thisPath: TagPathSequence, thatPath: TagPathSequence) if thisPath.tag == thatPath.tag =>
+          thisPath.item match {
+            case Some(thisIndex) =>
+              thatPath.item match {
+                case Some(thatIndex) => thisIndex < thatIndex
+                case None => true
+              }
+            case None =>
+              thatPath.item match {
+                case Some(_) => true
+                case None => false
+              }
+          }
+        case (thisPath, thatPath) =>
+          thisPath.tag < thatPath.tag
+      }
+      .map(_ => true)
       .getOrElse(thisList.length < thatList.length)
+  }
+
+  /**
+    * @param that tag path to test
+    * @return `true` if the input tag path is part of this tag path, `false` otherwise.
+    */
+  def contains(that: TagPath): Boolean = {
+    val thisList = this.toList
+    val thatList = that.toList
+
+    if (thisList.length >= thatList.length)
+      thisList.zip(thatList).forall {
+        case (thisSeq: TagPathSequence, thatSeq: TagPathSequence) =>
+            thisSeq.tag == thatSeq.tag && (thisSeq.item.isEmpty || thatSeq.item.contains(thisSeq.item.get))
+        case (thisTag: TagPathTag, thatTag: TagPathTag) =>
+            thisTag.tag == thatTag.tag
+        case _ =>
+            false
+      }
+    else
+      false
   }
 
   /**
@@ -68,7 +110,8 @@ object TagPath {
 
   /**
     * A tag path that points to a non-sequence tag
-    * @param tag the tag number
+    *
+    * @param tag      the tag number
     * @param previous a link to the part of this tag part to the left of this tag
     */
   class TagPathTag private[TagPath](val tag: Int, val previous: Option[TagPathSequence]) extends TagPath {
@@ -83,35 +126,13 @@ object TagPath {
     }
 
     override def hashCode(): Int = 31 * (31 * previous.map(_.hashCode()).getOrElse(0) + tag.hashCode())
-
-    /**
-      * @param that tag path to test
-      * @return `true` if the input tag path is part of this tag path, `false` otherwise.
-      * @throws IllegalArgumentException if the input tag point points to a sequence, it must point to a non-sequence tag.
-      */
-    def contains(that: TagPathTag): Boolean = {
-      val thisList = this.toList
-      val thatList = that.toList
-
-      if (thisList.length == thatList.length)
-        thisList.zip(thatList).forall {
-          case (thisTag, thatTag) =>
-            if (thisTag.isSequence && thatTag.isSequence) {
-              val thisSeq = thisTag.asInstanceOf[TagPathSequence]
-              val thatSeq = thatTag.asInstanceOf[TagPathSequence]
-              thisSeq.tag == thatSeq.tag && (thisSeq.item.isEmpty || thatSeq.item.contains(thisSeq.item.get))
-            } else
-              thisTag.tag == thatTag.tag
-        }
-      else
-        false
-    }
   }
 
   /**
     * A tag path that points to a sequence
-    * @param tag the sequence tag number
-    * @param item if defined, this defines the item index in the sequence. If not defined, this path points to all items in sequence
+    *
+    * @param tag      the sequence tag number
+    * @param item     if defined, this defines the item index in the sequence. If not defined, this path points to all items in sequence
     * @param previous a link to the part of this tag part to the left of this tag
     */
   class TagPathSequence private[TagPath](val tag: Int, val item: Option[Int], val previous: Option[TagPathSequence]) extends TagPath {

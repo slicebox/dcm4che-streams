@@ -176,4 +176,101 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomError()
   }
+
+  it should "insert into the correct sequence item" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(0)
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectItem(1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
+  it should "modify the correct sequence item" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.PatientName), _ => mikeBytes, insert = false)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(0)
+      .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.drop(8).length)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectItem(1)
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
+  it should "insert into all sequence items" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(0)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectItem(1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+  it should "modify all sequence items" in {
+    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.PatientName), _ => mikeBytes, insert = false)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(0)
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectItem(1)
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
 }
