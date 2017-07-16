@@ -210,13 +210,12 @@ object TagPath {
     def parseTagNumber(s: String) = Integer.parseInt(s.substring(1,5) + s.substring(6,10), 16)
     def parseIndex(s: String) = if (s.charAt(12) == '*') None else Some(Integer.parseInt(s.substring(12, s.length - 1)))
     def createTag(s: String) = TagPath.fromTag(parseTagNumber(s))
-    def createSeq(s: String) =
-      if (isSeq(s))
-        parseIndex(s).map(index => TagPath.fromSequence(parseTagNumber(s), index)).getOrElse(TagPath.fromSequence(parseTagNumber(s)))
-      else
-        TagPath.fromSequence(parseTagNumber(s))
-    def addSeq(s: String, path: TagPathSequence) =
-      parseIndex(s).map(index => path.thenSequence(parseTagNumber(s), index)).getOrElse(path.thenSequence(parseTagNumber(s)))
+    def createSeq(s: String) = parseIndex(s)
+      .map(index => TagPath.fromSequence(parseTagNumber(s), index))
+      .getOrElse(TagPath.fromSequence(parseTagNumber(s)))
+    def addSeq(s: String, path: TagPathSequence) = parseIndex(s)
+      .map(index => path.thenSequence(parseTagNumber(s), index))
+      .getOrElse(path.thenSequence(parseTagNumber(s)))
     def addTag(s: String, path: TagPathSequence) = path.thenTag(parseTagNumber(s))
 
     val tags = if (s.indexOf('.') > 0) s.split("\\.").toList else List(s)
