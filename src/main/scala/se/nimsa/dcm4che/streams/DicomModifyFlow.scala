@@ -35,9 +35,7 @@ object DicomModifyFlow {
       .concat(Source.single(DicomEndMarker))
       .statefulMapConcat {
         () =>
-          val modificationsLeft = modifications
-            .toList
-            .sortWith((a, b) => a.tagPath < b.tagPath)
+          val sortedModifications = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 
           var currentModification: Option[TagModification] = None // current modification
           var currentHeader: Option[DicomHeader] = None // header of current attribute being modified
@@ -64,19 +62,23 @@ object DicomModifyFlow {
             header :: value :: Nil
           }
 
+          def isBetween(tagToTest: TagPath, upperTag: TagPath, lowerTagMaybe: Option[TagPath]) =
+            tagToTest < upperTag && lowerTagMaybe.forall(_ < tagToTest)
+
+          def isInDataset(tagToTest: TagPath, sequenceMaybe: Option[TagPathSequence]) =
+            sequenceMaybe.map(tagToTest.contains).getOrElse(tagToTest.isRoot)
+
         {
           case header: DicomHeader =>
             updateSyntax(header)
             val tagPath = tagPathSequence.map(_.thenTag(header.tag)).getOrElse(TagPath.fromTag(header.tag))
-            val insertModifications = modificationsLeft
+            val insertParts = sortedModifications
               .filter(_.insert)
-              .filter(m => m.tagPath < tagPath && currentTagPath.forall(_ < m.tagPath)) // insert if modification is between current and former path
-              .filter(m => tagPathSequence.map(m.tagPath.contains).getOrElse(m.tagPath.isRoot)) // only insert if dataset exists
-              val inserts = insertModifications
-                .flatMap(tagModification => headerAndValueParts(tagModification.tagPath, tagModification.modification))
-            val modifyModification = modificationsLeft
+              .filter(m => isBetween(m.tagPath, tagPath, currentTagPath))
+              .filter(m => isInDataset(m.tagPath, tagPathSequence))
+              .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
+            val modifyPart = sortedModifications
               .find(_.tagPath.contains(tagPath))
-            val modify = modifyModification
               .map { tagModification =>
                 currentHeader = Some(header)
                 value = ByteString.empty
@@ -85,8 +87,7 @@ object DicomModifyFlow {
               }
               .getOrElse(header :: Nil)
             currentTagPath = Some(tagPath)
-            // modificationsLeft = modificationsLeft.filterNot(m => insertModifications.contains(m) || modifyModification.contains(m))
-            inserts ::: modify
+            insertParts ::: modifyPart
           case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
             value = value ++ chunk.bytes
             if (chunk.last) {
@@ -115,11 +116,11 @@ object DicomModifyFlow {
           case itemDelimitation: DicomItemDelimitation =>
             itemDelimitation :: Nil
           case DicomEndMarker =>
-            modificationsLeft
+            sortedModifications
               .filter(_.insert)
               .filter(_.tagPath.isRoot)
               .filter(m => currentTagPath.exists(_ < m.tagPath))
-              .flatMap(tagModification => headerAndValueParts(tagModification.tagPath, tagModification.modification))
+              .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
           case DicomEndMarker =>
             Nil
           case part =>

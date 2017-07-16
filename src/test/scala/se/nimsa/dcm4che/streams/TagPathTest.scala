@@ -175,4 +175,24 @@ class TagPathTest extends FlatSpec with Matchers {
     val bPath = TagPath.fromSequence(1).thenSequence(2, 4).thenSequence(3)
     aPath.contains(bPath) shouldBe false
   }
+
+  "Parsing a tag path" should "work for well-formed depth 0 tag paths" in {
+    TagPath.parse("(0010,0010)") shouldBe TagPath.fromTag(Tag.PatientName)
+  }
+
+  it should "work for deep tag paths" in {
+    TagPath.parse("(0008,9215)[*].(0008,9215)[666].(0010,0010)") shouldBe TagPath.fromSequence(Tag.DerivationCodeSequence).thenSequence(Tag.DerivationCodeSequence, 666).thenTag(Tag.PatientName)
+  }
+
+  it should "throw an exception for malformed strings" in {
+    intercept[IllegalArgumentException] {
+      TagPath.parse("abc")
+    }
+  }
+
+  it should "throw an exception for empty strings" in {
+    intercept[IllegalArgumentException] {
+      TagPath.parse("")
+    }
+  }
 }

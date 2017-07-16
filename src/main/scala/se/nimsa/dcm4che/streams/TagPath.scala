@@ -198,4 +198,38 @@ object TagPath {
     * @return the tag path
     */
   def fromSequence(tag: Int, item: Int) = new TagPathSequence(tag, Some(item), None)
+
+  /**
+    * Parse the string representation of a tag path into a tag path object.
+    * @param s string to parse
+    * @return a tag path
+    * @throws IllegalArgumentException for malformed input
+    */
+  def parse(s: String): TagPath = {
+    def isSeq(s: String) = s.length > 11
+    def parseTagNumber(s: String) = Integer.parseInt(s.substring(1,5) + s.substring(6,10), 16)
+    def parseIndex(s: String) = if (s.charAt(12) == '*') None else Some(Integer.parseInt(s.substring(12, s.length - 1)))
+    def createTag(s: String) = TagPath.fromTag(parseTagNumber(s))
+    def createSeq(s: String) =
+      if (isSeq(s))
+        parseIndex(s).map(index => TagPath.fromSequence(parseTagNumber(s), index)).getOrElse(TagPath.fromSequence(parseTagNumber(s)))
+      else
+        TagPath.fromSequence(parseTagNumber(s))
+    def addSeq(s: String, path: TagPathSequence) =
+      parseIndex(s).map(index => path.thenSequence(parseTagNumber(s), index)).getOrElse(path.thenSequence(parseTagNumber(s)))
+    def addTag(s: String, path: TagPathSequence) = path.thenTag(parseTagNumber(s))
+
+    val tags = if (s.indexOf('.') > 0) s.split("\\.").toList else List(s)
+    val seqTags = if (tags.length > 1) tags.init else Nil // list of sequence tags, if any
+    val lastTag = tags.last // tag or sequence
+    try {
+      seqTags.headOption.map(first => seqTags.tail.foldLeft(createSeq(first))((path, tag) => addSeq(tag, path))) match {
+        case Some(path) => if (isSeq(lastTag)) addSeq(lastTag, path) else addTag(lastTag, path)
+        case None       => if (isSeq(lastTag)) createSeq(lastTag) else createTag(lastTag)
+      }
+    } catch {
+      case e: Exception => throw new IllegalArgumentException("Tag path could not be parsed", e)
+    }
+  }
+
 }

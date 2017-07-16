@@ -177,6 +177,20 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectDicomError()
   }
 
+  it should "skip insert attributes pointing to datasets that does not exist" in {
+    val bytes = patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.PatientName), _ => ByteString.empty, insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
   it should "insert into the correct sequence item" in {
     val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
 
