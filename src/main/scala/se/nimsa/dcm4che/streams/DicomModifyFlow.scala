@@ -121,8 +121,6 @@ object DicomModifyFlow {
               .filter(_.tagPath.isRoot)
               .filter(m => currentTagPath.exists(_ < m.tagPath))
               .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
-          case DicomEndMarker =>
-            Nil
           case part =>
             part :: Nil
         }
