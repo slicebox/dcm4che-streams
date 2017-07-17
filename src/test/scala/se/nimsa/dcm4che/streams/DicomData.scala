@@ -96,10 +96,10 @@ object DicomData {
         case chunk: DicomValueChunk => chunk.bytes == bytes
       }
 
-    def expectItem() = probe
+    def expectItem(index: Int) = probe
       .request(1)
       .expectNextChainingPF {
-        case _: DicomItem => true
+        case item: DicomItem => item.index == index
       }
 
     def expectItemDelimitation() = probe

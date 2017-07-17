@@ -18,7 +18,6 @@ package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
 import org.dcm4che3.data.{SpecificCharacterSet, VR}
-import org.dcm4che3.util.TagUtils
 
 
 object DicomParts {
@@ -34,20 +33,20 @@ object DicomParts {
 
   case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
 
-    def withUpdatedLength(newLength: Int) : DicomHeader = {
+    def withUpdatedLength(newLength: Int): DicomHeader = {
 
       val updated = if ((bytes.size >= 8) && explicitVR && (vr.headerLength == 8)) { //explicit vr
-          bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, bigEndian)
-        } else if ((bytes.size >= 12) && explicitVR && (vr.headerLength == 12)) { //explicit vr
-          bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)
-        } else { //implicit vr
-          bytes.take(4) ++ DicomParsing.intToBytes(newLength, bigEndian)
-        }
+        bytes.take(6) ++ DicomParsing.shortToBytes(newLength.toShort, bigEndian)
+      } else if ((bytes.size >= 12) && explicitVR && (vr.headerLength == 12)) { //explicit vr
+        bytes.take(8) ++ DicomParsing.intToBytes(newLength, bigEndian)
+      } else { //implicit vr
+        bytes.take(4) ++ DicomParsing.intToBytes(newLength, bigEndian)
+      }
 
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
     }
 
-    override def toString = s"DicomHeader ${TagUtils.toString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomHeader ${DicomParsing.tagToString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   object DicomHeader {
@@ -76,20 +75,20 @@ object DicomParts {
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomItem(length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomItem length = $length ${if (bigEndian) "(big endian) " else "" }$bytes"
+  case class DicomItem(index: Int, length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+    override def toString = s"DicomItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
-  case class DicomItemDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
+  case class DicomItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomSequence ${TagUtils.toString(tag)} ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomSequence ${DicomParsing.tagToString(tag)} ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomFragments ${TagUtils.toString(tag)} $vr ${if (bigEndian) "(big endian) " else "" }$bytes"
+    override def toString = s"DicomFragments ${DicomParsing.tagToString(tag)} $vr ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   case class DicomFragmentsDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
