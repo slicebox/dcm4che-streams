@@ -25,6 +25,8 @@ import org.dcm4che3.io.DicomStreamException
   */
 trait DicomParsing {
 
+  private val hexDigits = Array('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F')
+
   val dicomPreambleLength = 132
 
   case class Info(bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean) {
@@ -216,6 +218,9 @@ trait DicomParsing {
   def tagToBytes(tag: Int, bigEndian: Boolean): ByteString = if (bigEndian) tagToBytesBE(tag) else tagToBytesLE(tag)
   def tagToBytesBE(tag: Int): ByteString = intToBytesBE(tag)
   def tagToBytesLE(tag: Int): ByteString = ByteString((tag >> 16).toByte, (tag >> 24).toByte, tag.toByte,(tag >> 8).toByte)
+  def tagToString(tag: Int): String = new String(Array('(',
+    hexDigits(tag >>> 28), hexDigits(tag >>> 24 & 15), hexDigits(tag >>> 20 & 15), hexDigits(tag >>> 16 & 15), ',',
+    hexDigits(tag >>> 12 & 15), hexDigits(tag >>> 8 & 15), hexDigits(tag >>> 4 & 15), hexDigits(tag >>> 0 & 15), ')'))
 
 }
 
