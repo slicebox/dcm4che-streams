@@ -21,7 +21,7 @@ import java.util.zip.Deflater
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
-import org.dcm4che3.data.Tag
+import org.dcm4che3.data.{Tag, VR}
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
@@ -297,12 +297,21 @@ object DicomFlows {
     *                      if this limit is exceed. Set to 0 for an unlimited buffer size
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
-  def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] =
+  def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] = {
+    val maxTag = if (tags.isEmpty) 0 else tags.max
+    val tagCondition = tags.contains _
+    val stopCondition = if (tags.isEmpty) (_: Int) => true else (tag: Int) => tag >= maxTag
+    collectAttributesFlow(tagCondition, stopCondition, maxBufferSize)
+  }
+
+  /**
+    * A more general version of `collectAttributesFlow` where functions are used for determining whether a tag is
+    * collected or not, and when to stop collecting.
+    */
+  def collectAttributesFlow(tagCondition: Int => Boolean, stopCondition: Int => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .concat(Source.single(DicomEndMarker))
       .statefulMapConcat {
-        val stopTag = if (tags.isEmpty) 0 else tags.max
-
         () =>
           var reachedEnd = false
           var currentBufferSize = 0
@@ -339,7 +348,7 @@ object DicomFlows {
             buffer = buffer :+ part
 
             part match {
-              case header: DicomHeader if tags.contains(header.tag) =>
+              case header: DicomHeader if tagCondition(header.tag) =>
                 currentAttribute = Some(DicomAttribute(header, Seq.empty))
                 Nil
 
@@ -356,7 +365,7 @@ object DicomFlows {
                     if (valueChunk.last) {
                       attributes = attributes :+ updatedAttribute
                       currentAttribute = None
-                      if (updatedAttribute.header.tag >= stopTag)
+                      if (stopCondition(updatedAttribute.header.tag))
                         attributesAndBuffer()
                       else
                         Nil
@@ -376,6 +385,7 @@ object DicomFlows {
     *
     * Rules ported from [[https://github.com/dcm4che/dcm4che/blob/3.3.8/dcm4che-core/src/main/java/org/dcm4che3/io/BulkDataDescriptor.java#L58 dcm4che]].
     * Defined [[http://dicom.nema.org/medical/dicom/current/output/html/part04.html#table_Z.1-1 here in the DICOM standard]].
+    *
     * @return the associated DicomPart Flow
     */
   val bulkDataFilter = Flow[DicomPart]
@@ -421,4 +431,48 @@ object DicomFlows {
       }
     }
 
+  /**
+    * Buffers all file meta information attributes and calculates their lengths, then emits the correct file meta
+    * information group length attribute followed by remaining FMI.
+    */
+  val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+    .concat(Source.single(DicomEndMarker))
+    .via(collectAttributesFlow(DicomParsing.isFileMetaInformation, (tag: Int) => !DicomParsing.isFileMetaInformation(tag), 1000000))
+    .via(blacklistFilter(DicomParsing.isFileMetaInformation _))
+    .statefulMapConcat {
+
+      () =>
+        var fmi = List.empty[DicomPart]
+        var hasEmitted = false
+
+      {
+        case fmiAttributes: DicomAttributes =>
+          if (fmiAttributes.attributes.nonEmpty) {
+            val fmiAttributesNoLength = fmiAttributes.attributes
+              .filter(_.header.tag != Tag.FileMetaInformationGroupLength)
+            val length = fmiAttributesNoLength.map(_.bytes.length).sum
+            val lengthHeader = DicomHeader(Tag.FileMetaInformationGroupLength, VR.OB, 4, isFmi = true, bigEndian = false, explicitVR = true, ByteString(2, 0, 0, 0, 85, 76, 4, 0))
+            val lengthChunk = DicomValueChunk(bigEndian = false, DicomParsing.intToBytesLE(length), last = true)
+            val fmiParts = fmiAttributesNoLength.toList.flatMap(attribute => attribute.header :: attribute.valueChunks.toList)
+            fmi = lengthHeader :: lengthChunk :: fmiParts
+          }
+          Nil
+
+        case preamble: DicomPreamble if hasEmitted => preamble :: Nil
+        case preamble: DicomPreamble if !hasEmitted =>
+          hasEmitted = true
+          preamble :: fmi
+
+        case DicomEndMarker if hasEmitted => Nil
+        case DicomEndMarker if !hasEmitted =>
+          hasEmitted = true
+          fmi
+
+        case part if hasEmitted => part :: Nil
+        case part if !hasEmitted =>
+          hasEmitted = true
+          fmi ::: part :: Nil
+
+      }
+    }
 }

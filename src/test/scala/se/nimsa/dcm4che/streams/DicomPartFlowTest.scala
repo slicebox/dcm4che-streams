@@ -7,15 +7,17 @@ import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.Tag
-import org.scalatest.{FlatSpecLike, Matchers}
+import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 
-class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers {
+class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
   import DicomData._
   import DicomParts._
 
   implicit val materializer = ActorMaterializer()
   implicit val ec = system.dispatcher
+
+  override def afterAll() = system.terminate()
 
   "A DICOM flow" should "produce a preamble, FMI tags and attribute tags for a complete DICOM file" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe

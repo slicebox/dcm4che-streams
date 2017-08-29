@@ -46,7 +46,7 @@ object DicomParts {
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
     }
 
-    override def toString = s"DicomHeader ${DicomParsing.tagToString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+    override def toString = s"DicomHeader ${DicomParsing.tagToString(tag)} ${if (isFmi) "(meta) " else ""}$vr ${if (!explicitVR) "(implicit) " else ""}length = ${bytes.length} value length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   object DicomHeader {

@@ -10,11 +10,11 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data._
 import org.dcm4che3.io.{DicomInputStream, DicomOutputStream, DicomStreamException}
-import org.scalatest.{AsyncFlatSpecLike, Matchers}
+import org.scalatest.{AsyncFlatSpecLike, BeforeAndAfterAll, Matchers}
 
 import scala.concurrent.Future
 
-class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers {
+class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers with BeforeAndAfterAll {
 
   import DicomData._
   import se.nimsa.dcm4che.streams.DicomAttributesSink._
@@ -22,6 +22,8 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
 
   implicit val materializer = ActorMaterializer()
   implicit val ec = system.dispatcher
+
+  override def afterAll() = system.terminate()
 
   def toAttributes(bytes: ByteString): (Option[Attributes], Option[Attributes]) = {
     val dis = new DicomInputStream(new ByteArrayInputStream(bytes.toArray))
