@@ -320,13 +320,25 @@ object DicomFlows {
   def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] = {
     val maxTag = if (tags.isEmpty) 0 else tags.max
     val tagCondition = tags.contains _
-    val stopCondition = if (tags.isEmpty) (_: Int) => true else (tag: Int) => tag >= maxTag
+    val stopCondition = if (tags.isEmpty) (_: Int) => true else (tag: Int) => tag > maxTag
     collectAttributesFlow(tagCondition, stopCondition, maxBufferSize)
   }
 
   /**
-    * A more general version of `collectAttributesFlow` where functions are used for determining whether a tag is
-    * collected or not, and when to stop collecting.
+    * Collect attributes whenever the input tag condition yields `true` while buffering all elements of the stream. When
+    * the stop condition yields `true`, a DicomAttributesElement is emitted containing a list of
+    * DicomAttributeParts with the collected information, followed by all buffered elements. Remaining elements in the
+    * stream are immediately emitted downstream without buffering.
+    *
+    * This flow is used when there is a need to "look ahead" for certain information in the stream so that streamed
+    * elements can be processed correctly according to this information. As an example, an implementation may have
+    * different graph paths for different modalities and the modality must be known before any elements are processed.
+    *
+    * @param tagCondition  function determining the condition(s) for which attributes are collected
+    * @param stopCondition function determining the condition for when collection should stop and attributes are emitted
+    * @param maxBufferSize the maximum allowed size of the buffer (to avoid running out of memory). The flow will fail
+    *                      if this limit is exceed. Set to 0 for an unlimited buffer size
+    * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
   def collectAttributesFlow(tagCondition: Int => Boolean, stopCondition: Int => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
@@ -337,7 +349,7 @@ object DicomFlows {
           var currentBufferSize = 0
           var currentAttribute: Option[DicomAttribute] = None
           var buffer: List[DicomPart] = Nil
-          var attributes = Seq.empty[DicomAttribute]
+          var attributes: List[DicomAttribute] = Nil
 
           def attributesAndBuffer() = {
             val parts = DicomAttributes(attributes) :: buffer
@@ -360,14 +372,17 @@ object DicomFlows {
             part :: Nil
 
           case part =>
-            currentBufferSize = currentBufferSize + part.bytes.size
             if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
               throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
             }
 
             buffer = buffer :+ part
+            currentBufferSize = currentBufferSize + part.bytes.size
 
             part match {
+              case header: DicomHeader if stopCondition(header.tag) =>
+                attributesAndBuffer()
+
               case header: DicomHeader if tagCondition(header.tag) =>
                 currentAttribute = Some(DicomAttribute(header, Seq.empty))
                 Nil
@@ -385,10 +400,7 @@ object DicomFlows {
                     if (valueChunk.last) {
                       attributes = attributes :+ updatedAttribute
                       currentAttribute = None
-                      if (stopCondition(updatedAttribute.header.tag))
-                        attributesAndBuffer()
-                      else
-                        Nil
+                      Nil
                     } else
                       Nil
 

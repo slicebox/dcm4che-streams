@@ -386,6 +386,17 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+  it should "fail if max buffer size is exceeded" in {
+    val bytes = studyDate ++ patientNameJohnDoe ++ pixelData(2000)
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow(chunkSize = 500))
+      .via(collectAttributesFlow(_ == Tag.PatientName, _ > Tag.PixelData, maxBufferSize = 1000))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectDicomError()
+  }
+
   "The bulk data filter flow" should "remove pixel data" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ pixelData(1000)
 
