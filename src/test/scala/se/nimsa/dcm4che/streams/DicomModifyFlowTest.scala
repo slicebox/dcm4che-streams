@@ -8,18 +8,20 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
-import se.nimsa.dcm4che.streams.DicomModifyFlow.TagModification
+
+import scala.concurrent.ExecutionContextExecutor
 
 class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
+  import DicomModifyFlow._
   import DicomParts._
-  import DicomModifyFlow.modifyFlow
+  import TestData._
+  import TestUtils._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
 
-  override def afterAll() = system.terminate()
+  override def afterAll(): Unit = system.terminate()
 
   "The modify flow" should "modify the value of the specified attributes" in {
     val bytes = patientNameJohnDoe ++ studyDate

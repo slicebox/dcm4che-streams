@@ -10,20 +10,23 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data._
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
-import se.nimsa.dcm4che.streams.DicomPartFlow.partFlow
-import se.nimsa.dcm4che.streams.DicomParts.{DicomAttributes, DicomPart}
+
+import scala.concurrent.ExecutionContextExecutor
 
 
 class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
   import DicomFlows._
   import DicomModifyFlow._
+  import DicomPartFlow._
+  import DicomParts._
+  import TestData._
+  import TestUtils._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
 
-  override def afterAll() = system.terminate()
+  override def afterAll(): Unit = system.terminate()
 
   "A DICOM attributes flow" should "combine headers and value chunks into attributes" in {
     val bytes = patientNameJohnDoe ++ studyDate
@@ -122,7 +125,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   "The DICOM group length discard filter" should "discard group length elements except 0002,0000" in {
-    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
+    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ intToBytesLE(studyDate.size)
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ groupLength ++ studyDate
 
     val source = Source.single(bytes)
@@ -228,7 +231,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8))
+      .via(whitelistFilter((tag: Int) => groupNumber(tag) >= 8))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -452,7 +455,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
       .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk(DicomParsing.intToBytesLE(correctLength))
+      .expectValueChunk(intToBytesLE(correctLength))
       .expectHeader(Tag.TransferSyntaxUID)
       .expectValueChunk()
       .expectHeader(Tag.PatientName)
@@ -471,7 +474,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
       .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk(DicomParsing.intToBytesLE(correctLength))
+      .expectValueChunk(intToBytesLE(correctLength))
       .expectHeader(Tag.TransferSyntaxUID)
       .expectValueChunk()
       .expectDicomComplete()
@@ -487,7 +490,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk(DicomParsing.intToBytesLE(correctLength))
+      .expectValueChunk(intToBytesLE(correctLength))
       .expectHeader(Tag.TransferSyntaxUID)
       .expectValueChunk()
       .expectHeader(Tag.PatientName)

@@ -9,15 +9,17 @@ import akka.util.ByteString
 import org.dcm4che3.data.UID._
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 
+import scala.concurrent.ExecutionContextExecutor
+
 class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
+  import TestData._
   import se.nimsa.dcm4che.streams.DicomFlows._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
 
-  override def afterAll() = system.terminate()
+  override def afterAll(): Unit = system.terminate()
 
   "The DICOM validation flow" should "accept a file consisting of a preamble only" in {
     val bytes = preamble

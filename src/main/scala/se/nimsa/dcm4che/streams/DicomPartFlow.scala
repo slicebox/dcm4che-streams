@@ -64,7 +64,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     }
 
     case object AtBeginning extends DicomParseStep {
-      def parse(reader: ByteReader) = {
+      def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val maybePreamble =
           if (!isUpstreamClosed || reader.remainingSize >= dicomPreambleLength) {
             reader.ensure(dicomPreambleLength)
@@ -89,7 +89,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     }
 
     case class InFmiHeader(state: FmiHeaderState) extends DicomParseStep {
-      def parse(reader: ByteReader) = {
+      def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val (tag, vr, headerLength, valueLength) = readHeader(reader, state)
         if (groupNumber(tag) != 2) {
           log.warning("Missing or wrong File Meta Information Group Length (0002,0000)")
@@ -130,7 +130,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     }
 
     case class InDatasetHeader(state: DatasetHeaderState, inflater: Option[InflateData]) extends DicomParseStep {
-      def parse(reader: ByteReader) = {
+      def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val part = readDatasetHeader(reader, state)
         val nextState = part.map {
           case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
@@ -145,7 +145,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     }
 
     case class InValue(state: ValueState) extends DicomParseStep {
-      def parse(reader: ByteReader) = {
+      def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val parseResult =
           if (state.bytesLeft <= chunkSize)
             ParseResult(Some(DicomValueChunk(state.bigEndian, reader.take(state.bytesLeft), last = true)), state.nextStep)
@@ -168,7 +168,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
     }
 
     case class InFragments(state: FragmentsState, inflater: Option[InflateData]) extends DicomParseStep {
-      def parse(reader: ByteReader) = {
+      def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val (tag, _, headerLength, valueLength) = readHeader(reader, state)
         tag match {
           case 0xFFFEE000 => // begin item
@@ -182,7 +182,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             }
             ParseResult(Some(DicomFragmentsDelimitation(state.bigEndian, reader.take(headerLength))), InDatasetHeader(DatasetHeaderState(-1, state.bigEndian, state.explicitVR), inflater))
           case _ =>
-            log.warning(s"Unexpected attribute (${DicomParsing.tagToString(tag)}) in fragments with length=$valueLength")
+            log.warning(s"Unexpected attribute (${tagToString(tag)}) in fragments with length=$valueLength")
             ParseResult(Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength + valueLength))), this)
         }
       }
