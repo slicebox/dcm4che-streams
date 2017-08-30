@@ -532,10 +532,38 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk(ByteString(0,0,0,0))
+      .expectValueChunk(ByteString(0, 0, 0, 0))
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectDicomComplete()
   }
+
+  it should "ignore DICOM parts of unknown type" in {
+    case object SomePart extends DicomPart {
+      def bigEndian: Boolean = false
+      def bytes: ByteString = ByteString.empty
+    }
+
+    val correctLength = tsuidExplicitLE.length
+    val bytes = preamble ++ tsuidExplicitLE // missing file meta information group length
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .prepend(Source.single(SomePart))
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .request(1)
+      .expectNextChainingPF {
+        case SomePart => true
+      }
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(intToBytesLE(correctLength))
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
 }
 

@@ -120,7 +120,7 @@ object DicomParts {
   }
 
   case object DicomEndMarker extends DicomPart {
-    def bigEndian = false
+    def bigEndian: Boolean = false
     def bytes: ByteString = ByteString.empty
   }
 

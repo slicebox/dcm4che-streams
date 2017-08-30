@@ -486,16 +486,17 @@ object DicomFlows {
           hasEmitted = true
           preamble :: fmi
 
+        case header: DicomHeader if hasEmitted => header :: Nil
+        case header: DicomHeader if !hasEmitted =>
+          hasEmitted = true
+          fmi ::: header :: Nil
+
         case DicomEndMarker if hasEmitted => Nil
         case DicomEndMarker if !hasEmitted =>
           hasEmitted = true
           fmi
 
-        case part if hasEmitted => part :: Nil
-        case part if !hasEmitted =>
-          hasEmitted = true
-          fmi ::: part :: Nil
-
+        case part => part :: Nil
       }
     }
 }
