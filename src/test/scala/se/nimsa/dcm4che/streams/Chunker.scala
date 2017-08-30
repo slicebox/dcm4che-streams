@@ -5,9 +5,9 @@ import akka.stream.stage._
 import akka.util.ByteString
 
 class Chunker(val chunkSize: Int) extends GraphStage[FlowShape[ByteString, ByteString]] {
-  val in = Inlet[ByteString]("Chunker.in")
-  val out = Outlet[ByteString]("Chunker.out")
-  override val shape = FlowShape.of(in, out)
+  val in: Inlet[ByteString] = Inlet[ByteString]("Chunker.in")
+  val out: Outlet[ByteString] = Outlet[ByteString]("Chunker.out")
+  override val shape: FlowShape[ByteString, ByteString] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
     private var buffer = ByteString.empty

@@ -1,11 +1,12 @@
 package se.nimsa.dcm4che.streams
 
 import org.scalatest.{FlatSpecLike, Matchers}
-import DicomData._
+import TestData._
 import akka.util.ByteString
-import se.nimsa.dcm4che.streams.DicomParts.{DicomAttribute, DicomHeader, DicomValueChunk}
 
 class DicomPartsTest extends FlatSpecLike with Matchers {
+
+  import DicomParts._
 
   "DicomHeader" should "should return a new header with modified length for explicitVR, LE" in {
     val (tag, vr, _, length) = DicomParsing.readHeaderExplicitVR(patientNameJohnDoe, assumeBigEndian = false).get

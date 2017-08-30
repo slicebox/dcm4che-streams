@@ -10,18 +10,21 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data._
 import org.dcm4che3.io.{DicomInputStream, DicomOutputStream, DicomStreamException}
-import org.scalatest.{AsyncFlatSpecLike, Matchers}
+import org.scalatest.{Assertion, AsyncFlatSpecLike, BeforeAndAfterAll, Matchers}
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContextExecutor, Future}
 
-class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers {
+class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
-  import se.nimsa.dcm4che.streams.DicomAttributesSink._
-  import se.nimsa.dcm4che.streams.DicomFlows._
+  import DicomAttributesSink._
+  import DicomFlows._
+  import TestData._
+  import TestUtils._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
+
+  override def afterAll(): Unit = system.terminate()
 
   def toAttributes(bytes: ByteString): (Option[Attributes], Option[Attributes]) = {
     val dis = new DicomInputStream(new ByteArrayInputStream(bytes.toArray))
@@ -44,7 +47,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
       .via(attributeFlow)
       .runWith(attributesSink)
 
-  def assertEquivalentToDcm4che(bytes: ByteString) = {
+  def assertEquivalentToDcm4che(bytes: ByteString): Future[Assertion] = {
     val attributes = toAttributes(bytes)
     val futureFlowAttributes = toFlowAttributes(bytes)
 

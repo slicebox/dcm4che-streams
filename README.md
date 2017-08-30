@@ -24,13 +24,14 @@ and writes it to a new file.
 import akka.stream.scaladsl.FileIO
 import java.nio.file.Paths
 import org.dcm4che3.data.Tag
+import se.nimsa.dcm4che.streams.DicomParsing._
 import se.nimsa.dcm4che.streams.DicomFlows._
 import se.nimsa.dcm4che.streams.DicomPartFlow._
 
 FileIO.fromPath(Paths.get("source-file.dcm"))
   .via(validateFlow)
   .via(partFlow)
-  .via(blacklistFilter(DicomParsing.isPrivateAttribute(_)))
+  .via(blacklistFilter(isPrivateAttribute))
   .map(_.bytes)
   .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
 ```
@@ -42,19 +43,51 @@ to keep the preamble:
 import akka.stream.scaladsl.FileIO
 import java.nio.file.Paths
 import org.dcm4che3.data.Tag
+import se.nimsa.dcm4che.streams.DicomParsing._
 import se.nimsa.dcm4che.streams.DicomFlows._
 import se.nimsa.dcm4che.streams.DicomPartFlow._
 
 FileIO.fromPath(Paths.get("source-file.dcm"))
   .via(validateFlow)
   .via(partFlow)
-  .via(whitelistFilter(!DicomParsing.isPrivateAttribute(_), keepPreamble = true))
+  .via(whitelistFilter(tag => !isPrivateAttribute(tag), keepPreamble = true))
   .map(_.bytes)
   .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
 ```
 
+Care should be taken when modifying DICOM data so that the resulting data is still valid. For instance, group length
+tags may need to be removed or updated after modifying attributes. Here is an example that modifies the `PatientName`
+and `SOPInstanceUID` attributes. To ensure the resulting data is valid, group length tags in the dataset are removed and
+the meta information group tag is updated.
 
-The next example materializes the above stream as dcm4che `Attributes` objects instead of writing data to disk.
+```scala
+import akka.stream.scaladsl.FileIO
+import akka.util.ByteString
+import java.nio.file.Paths
+import org.dcm4che3.data.{Tag, VR}
+import org.dcm4che3.util.UIDUtils._
+import se.nimsa.dcm4che.streams._
+import se.nimsa.dcm4che.streams.DicomFlows._
+import se.nimsa.dcm4che.streams.DicomPartFlow._
+import se.nimsa.dcm4che.streams.DicomModifyFlow._
+
+val updatedSOPInstanceUID = padToEvenLength(ByteString(createUID()), VR.UI)
+
+FileIO.fromPath(Paths.get("source-file.dcm"))
+  .via(validateFlow)
+  .via(partFlow)
+  .via(groupLengthDiscardFilter) // discard group length attributes in dataset
+  .via(modifyFlow(
+    TagModification(TagPath.fromTag(Tag.PatientName), _ => padToEvenLength(ByteString("John Doe"), VR.PN), insert = false),
+    TagModification(TagPath.fromTag(Tag.MediaStorageSOPInstanceUID), _ => updatedSOPInstanceUID, insert = false),
+    TagModification(TagPath.fromTag(Tag.SOPInstanceUID), _ => updatedSOPInstanceUID, insert = true),
+  ))
+  .via(fmiGroupLengthFlow) // update group length in meta information, if present
+  .map(_.bytes)
+  .runWith(FileIO.toPath(Paths.get("target-file.dcm")))
+```
+
+The next example materializes a stream as a dcm4che `Attributes` objects instead of writing data to disk.
 
 
 ```scala
@@ -70,7 +103,6 @@ val futureAttributes: Future[(Option[Attributes], Option[Attributes])] =
   FileIO.fromPath(Paths.get("source-file.dcm"))
     .via(validateFlow)
     .via(partFlow)
-    .via(whitelistFilter(Seq(Tag.PatientName, Tag.PatientID)))
     .via(attributeFlow) // must turn headers + chunks into complete attributes before materializing
     .runWith(attributesSink)
     

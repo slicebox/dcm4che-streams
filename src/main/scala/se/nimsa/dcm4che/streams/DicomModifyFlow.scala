@@ -26,6 +26,10 @@ object DicomModifyFlow {
     * That means that sequences are never inserted, only modified. Insertion works according to the `TagPathTag#contains`
     * method, meaning that if sequence wildcards are used in modifications they will apply to all items in a sequence.
     *
+    * Note that modified DICOM data may not be valid. This function does not ensure values are padded to even length and
+    * changing an attribute may lead to invalid group length attributes such as MediaStorageSOPInstanceUID. There are
+    * utility functions in `se.nimsa.ddcm4che.streams` for padding values and flows for adjusting group lengths.
+    *
     * @param modifications Any number of `TagModification`s each specifying a tag path, a modification function, and
     *                      a Boolean indicating whether absent values will be inserted or skipped.
     * @return the modified flow of DICOM parts

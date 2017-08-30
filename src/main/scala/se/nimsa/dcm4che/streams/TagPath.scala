@@ -12,12 +12,12 @@ sealed trait TagPath {
   /**
     * `true` if this tag path points to the root dataset, at depth 0
     */
-  val isRoot = previous.isEmpty
+  val isRoot: Boolean = previous.isEmpty
 
   /**
     * `true` if this tag path ends with a sequence
     */
-  val isSequence = this.isInstanceOf[TagPathSequence]
+  val isSequence: Boolean = this.isInstanceOf[TagPathSequence]
 
   def toList: List[TagPath] = {
     @tailrec
@@ -93,11 +93,11 @@ sealed trait TagPath {
     depth(this, 0)
   }
 
-  override def toString = {
+  override def toString: String = {
     @tailrec
     def toTagPathString(path: TagPath, tail: String): String = {
       val itemIndexSuffix = if (path.isSequence) s"[${path.asInstanceOf[TagPathSequence].item.map(_.toString).getOrElse("*")}]" else ""
-      val head = DicomParsing.tagToString(path.tag) + itemIndexSuffix
+      val head = tagToString(path.tag) + itemIndexSuffix
       val part = head + tail
       if (path.isRoot) part else toTagPathString(path.previous.get, "." + part)
     }

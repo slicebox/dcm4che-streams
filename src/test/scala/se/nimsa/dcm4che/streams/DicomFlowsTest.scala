@@ -9,19 +9,24 @@ import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data._
-import org.scalatest.{FlatSpecLike, Matchers}
-import se.nimsa.dcm4che.streams.DicomPartFlow.partFlow
-import se.nimsa.dcm4che.streams.DicomParts.{DicomAttributes, DicomPart}
+import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
+
+import scala.concurrent.ExecutionContextExecutor
 
 
-class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers {
+class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
   import DicomFlows._
   import DicomModifyFlow._
+  import DicomPartFlow._
+  import DicomParts._
+  import TestData._
+  import TestUtils._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
+
+  override def afterAll(): Unit = system.terminate()
 
   "A DICOM attributes flow" should "combine headers and value chunks into attributes" in {
     val bytes = patientNameJohnDoe ++ studyDate
@@ -120,7 +125,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   "The DICOM group length discard filter" should "discard group length elements except 0002,0000" in {
-    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ DicomData.intToBytesLE(studyDate.size)
+    val groupLength = ByteString(8, 0, 0, 0, 85, 76, 4, 0) ++ intToBytesLE(studyDate.size)
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ groupLength ++ studyDate
 
     val source = Source.single(bytes)
@@ -141,7 +146,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   it should "discard group length elements except 0002,0000 when testing with dicom file" in {
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(groupLengthDiscardFilter)
 
     source.runWith(TestSink.probe[DicomPart])
@@ -170,7 +175,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   it should "discard file meta information when testing with dicom files" in {
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(fmiDiscardFilter)
 
     source.runWith(TestSink.probe[DicomPart])
@@ -226,7 +231,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter((tag: Int) => DicomParsing.groupNumber(tag) >= 8))
+      .via(whitelistFilter((tag: Int) => groupNumber(tag) >= 8))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -239,7 +244,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   it should "filter elements not matching the whitelist condition when testing with sample dicom files" in {
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(whitelistFilter(_ == Tag.PatientName))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -385,7 +390,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ pixelData(1000)
 
     val source = Source.single(bytes)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(bulkDataFilter)
 
     source.runWith(TestSink.probe[DicomPart])
@@ -403,7 +408,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ pixelData(100) ++ itemEnd ++ seqEnd
 
     val source = Source.single(bytes)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(bulkDataFilter)
 
     source.runWith(TestSink.probe[DicomPart])
@@ -422,7 +427,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val bytes = waveformSeqStart ++ itemNoLength ++ patientNameJohnDoe ++ waveformData(100) ++ itemEnd ++ seqEnd ++ patientNameJohnDoe ++ waveformData(100)
 
     val source = Source.single(bytes)
-      .via(DicomPartFlow.partFlow)
+      .via(partFlow)
       .via(bulkDataFilter)
 
     source.runWith(TestSink.probe[DicomPart])
@@ -439,5 +444,98 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+  "The FMI group length flow" should "calculate and emit the correct group length attribute" in {
+    val correctLength = tsuidExplicitLE.length
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE.drop(2)) ++ tsuidExplicitLE ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(intToBytesLE(correctLength))
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "work also in flows with file meta information only" in {
+    val correctLength = tsuidExplicitLE.length
+    val bytes = preamble ++ tsuidExplicitLE // missing file meta information group length
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(intToBytesLE(correctLength))
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "work in flows without preamble" in {
+    val correctLength = tsuidExplicitLE.length
+    val bytes = tsuidExplicitLE ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(intToBytesLE(correctLength))
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "not emit anything in empty flows" in {
+    val bytes = ByteString.empty
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectDicomComplete()
+  }
+
+  it should "not emit a group length attribute when there is no FMI" in {
+    val bytes = preamble ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "keep a zero length group length attribute" in {
+    val bytes = fmiGroupLength(ByteString.empty) ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(ByteString(0,0,0,0))
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
 }
 
