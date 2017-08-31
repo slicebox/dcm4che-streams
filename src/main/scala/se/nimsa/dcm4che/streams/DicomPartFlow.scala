@@ -55,7 +55,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
 
     case class FmiHeaderState(tsuid: Option[String], bigEndian: Boolean, explicitVR: Boolean, hasFmi: Boolean, pos: Long, fmiEndPos: Option[Long]) extends HeaderState
 
-    case class ValueState(bigEndian: Boolean, bytesLeft: Int, nextStep: ParseStep[DicomPart])
+    case class ValueState(bigEndian: Boolean, bytesLeft: Long, nextStep: ParseStep[DicomPart])
 
     case class FragmentsState(itemIndex: Int, bigEndian: Boolean, explicitVR: Boolean) extends HeaderState
 
@@ -103,11 +103,11 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             case Tag.FileMetaInformationGroupLength =>
               reader.ensure(4)
               val valueBytes = reader.remainingData.take(4)
-              state.copy(pos = updatedPos, fmiEndPos = Some(updatedPos + bytesToInt(valueBytes, state.bigEndian)))
+              state.copy(pos = updatedPos, fmiEndPos = Some(updatedPos + intToUnsignedLong(bytesToInt(valueBytes, state.bigEndian))))
             case Tag.TransferSyntaxUID =>
               if (valueLength < transferSyntaxLengthLimit) {
-                reader.ensure(valueLength)
-                val valueBytes = reader.remainingData.take(valueLength)
+                reader.ensure(valueLength.toInt)
+                val valueBytes = reader.remainingData.take(valueLength.toInt)
                 state.copy(tsuid = Some(valueBytes.utf8String.trim), pos = updatedPos)
               } else {
                 log.warning("Transfer syntax data is very large, skipping")
@@ -119,8 +119,8 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
           val part = Some(DicomHeader(tag, updatedVr, valueLength, isFmi = true, state.bigEndian, state.explicitVR, bytes))
           val nextStep = updatedState.fmiEndPos.filter(_ <= updatedPos) match {
             case Some(_) =>
-              reader.ensure(valueLength + 2)
-              toDatasetStep(reader.remainingData.drop(valueLength).take(2), updatedState)
+              reader.ensure(valueLength.toInt + 2)
+              toDatasetStep(reader.remainingData.drop(valueLength.toInt).take(2), updatedState)
             case None =>
               InFmiHeader(updatedState)
           }
@@ -148,7 +148,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val parseResult =
           if (state.bytesLeft <= chunkSize)
-            ParseResult(Some(DicomValueChunk(state.bigEndian, reader.take(state.bytesLeft), last = true)), state.nextStep)
+            ParseResult(Some(DicomValueChunk(state.bigEndian, reader.take(state.bytesLeft.toInt), last = true)), state.nextStep)
           else
             ParseResult(Some(DicomValueChunk(state.bigEndian, reader.take(chunkSize), last = false)), InValue(state.copy(bytesLeft = state.bytesLeft - chunkSize)))
         state.nextStep match {
@@ -183,7 +183,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             ParseResult(Some(DicomFragmentsDelimitation(state.bigEndian, reader.take(headerLength))), InDatasetHeader(DatasetHeaderState(-1, state.bigEndian, state.explicitVR), inflater))
           case _ =>
             log.warning(s"Unexpected attribute (${tagToString(tag)}) in fragments with length=$valueLength")
-            ParseResult(Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength + valueLength))), this)
+            ParseResult(Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength + valueLength.toInt))), this)
         }
       }
     }
@@ -227,21 +227,21 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       bytesToUShortBE(firstTwoBytes) == 0x789C
     }
 
-    def readHeader(reader: ByteReader, dicomState: HeaderState): (Int, VR, Int, Int) = {
+    def readHeader(reader: ByteReader, dicomState: HeaderState): (Int, VR, Int, Long) = {
       reader.ensure(8)
       val tagVrBytes = reader.remainingData.take(8)
       val (tag, vr) = tagVr(tagVrBytes, dicomState.bigEndian, dicomState.explicitVR)
       if (vr == null)
-        (tag, vr, 8, bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian))
+        (tag, vr, 8, lengthToLong(bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian)))
       else if (dicomState.explicitVR)
         if (vr.headerLength == 8)
-          (tag, vr, 8, bytesToUShort(tagVrBytes.drop(6), dicomState.bigEndian))
+          (tag, vr, 8, lengthToLong(bytesToUShort(tagVrBytes.drop(6), dicomState.bigEndian)))
         else {
           reader.ensure(12)
-          (tag, vr, 12, bytesToInt(reader.remainingData.drop(8), dicomState.bigEndian))
+          (tag, vr, 12, lengthToLong(bytesToInt(reader.remainingData.drop(8), dicomState.bigEndian)))
         }
       else
-        (tag, VR.UN, 8, bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian))
+        (tag, VR.UN, 8, lengthToLong(bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian)))
     }
 
     def readDatasetHeader(reader: ByteReader, state: DatasetHeaderState): Option[DicomPart] = {

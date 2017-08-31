@@ -1,13 +1,16 @@
 package se.nimsa.dcm4che.streams
 
+import java.io.File
+
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{FileIO, Sink, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
+import se.nimsa.dcm4che.streams.DicomFlows.{blacklistFilter, bulkDataFilter}
 
 import scala.concurrent.ExecutionContextExecutor
 
@@ -289,6 +292,29 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectValueChunk()
       .expectItemDelimitation()
       .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
+  it should "correctly sort attributes with tag numbers exceeding the positive range of its signed integer representation" in {
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ ByteString(0xFF, 0xFF, 0xFF, 0xFF, 68, 65, 10, 0, 49, 56, 51, 49, 51, 56, 46, 55, 54, 53)
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(
+        TagModification(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk()
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk()
+      .expectHeader(-1, VR.DA, 10)
+      .expectValueChunk()
       .expectDicomComplete()
   }
 }

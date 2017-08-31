@@ -150,6 +150,12 @@ class DicomParsingTest extends FlatSpecLike with Matchers {
     intToBytes(0x01020304, bigEndian = false) shouldBe ByteString(4, 3, 2, 1)
   }
 
+  it should "handle unsigned int values" in {
+    val length = Int.MaxValue.toLong + 1
+    length.toInt shouldBe Int.MinValue
+    intToUnsignedLong(length.toInt) shouldBe length
+  }
+
   it should "not read explicit VR attribute headers with insufficient length" in {
     readHeaderExplicitVR(ByteString.empty, assumeBigEndian = true) match {
       case Some(_) => fail

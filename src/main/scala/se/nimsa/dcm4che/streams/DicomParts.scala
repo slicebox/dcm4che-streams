@@ -31,16 +31,16 @@ object DicomParts {
     def bigEndian = false
   }
 
-  case class DicomHeader(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomHeader(tag: Int, vr: VR, length: Long, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
 
-    def withUpdatedLength(newLength: Int): DicomHeader = {
+    def withUpdatedLength(newLength: Long): DicomHeader = {
 
       val updated = if ((bytes.size >= 8) && explicitVR && (vr.headerLength == 8)) { //explicit vr
         bytes.take(6) ++ shortToBytes(newLength.toShort, bigEndian)
       } else if ((bytes.size >= 12) && explicitVR && (vr.headerLength == 12)) { //explicit vr
-        bytes.take(8) ++ intToBytes(newLength, bigEndian)
+        bytes.take(8) ++ intToBytes(newLength.toInt, bigEndian)
       } else { //implicit vr
-        bytes.take(4) ++ intToBytes(newLength, bigEndian)
+        bytes.take(4) ++ intToBytes(newLength.toInt, bigEndian)
       }
 
       DicomHeader(tag, vr, newLength, isFmi, bigEndian, explicitVR, updated)
@@ -50,7 +50,7 @@ object DicomParts {
   }
 
   object DicomHeader {
-    def apply(tag: Int, vr: VR, length: Int, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean): DicomHeader = {
+    def apply(tag: Int, vr: VR, length: Long, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean): DicomHeader = {
       val tagBytes = tagToBytes(tag, bigEndian)
       val headerBytes =
         if (explicitVR) {
@@ -59,10 +59,10 @@ object DicomParts {
             if (vr.headerLength() == 8)
               shortToBytes(length.toShort, bigEndian)
             else
-              ByteString(0, 0) ++ intToBytes(length, bigEndian)
+              ByteString(0, 0) ++ intToBytes(length.toInt, bigEndian)
           tagBytes ++ vrBytes ++ lengthBytes
         } else {
-          val lengthBytes = intToBytes(length, bigEndian)
+          val lengthBytes = intToBytes(length.toInt, bigEndian)
           tagBytes ++ lengthBytes
         }
       DicomHeader(tag, vr, length, isFmi, bigEndian, explicitVR, headerBytes)
@@ -75,7 +75,7 @@ object DicomParts {
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomItem(index: Int, length: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
     override def toString = s"DicomItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
@@ -107,7 +107,7 @@ object DicomParts {
     def withUpdatedValue(newValue: String, cs: SpecificCharacterSet = SpecificCharacterSet.ASCII): DicomAttribute = {
       val newBytes = header.vr.toBytes(newValue, cs)
       val needsPadding = newBytes.size % 2 == 1
-      val newLength = if (needsPadding) newBytes.size + 1 else newBytes.size
+      val newLength = if (needsPadding) newBytes.size + 1L else newBytes.size
       val updatedHeader = header.withUpdatedLength(newLength)
       val updatedValue = if (needsPadding)
         ByteString.fromArray(newBytes :+ header.vr.paddingByte().toByte)

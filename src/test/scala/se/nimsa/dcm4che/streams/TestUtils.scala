@@ -73,7 +73,7 @@ object TestUtils {
         case h: DicomHeader if h.tag == tag => true
       }
 
-    def expectHeader(tag: Int, vr: VR, length: Int): PartProbe = probe
+    def expectHeader(tag: Int, vr: VR, length: Long): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
         case h: DicomHeader if h.tag == tag && h.vr == vr && h.length == length => true

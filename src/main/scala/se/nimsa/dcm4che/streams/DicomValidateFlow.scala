@@ -177,7 +177,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
             } else {
               currentTag = tag
               if (!found(tag)) {
-                currentData = currentData.drop(headerLength + length)
+                currentData = currentData.drop(headerLength + length.toInt)
               }
               if (stopSearching(currentTag) || currentData.size < 8) {
                 // read past stop criteria without finding tag, or not enough data left in buffer

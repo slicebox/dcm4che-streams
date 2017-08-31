@@ -54,7 +54,7 @@ sealed trait TagPath {
               }
           }
         case (thisPath, thatPath) =>
-          thisPath.tag < thatPath.tag
+          intToUnsignedLong(thisPath.tag) < intToUnsignedLong(thatPath.tag)
       }
       .map(_ => true)
       .getOrElse(thisList.length < thatList.length)
