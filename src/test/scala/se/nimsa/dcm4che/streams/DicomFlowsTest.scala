@@ -424,7 +424,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectHeader(Tag.PixelData)
@@ -443,7 +443,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.WaveformSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectItemDelimitation()

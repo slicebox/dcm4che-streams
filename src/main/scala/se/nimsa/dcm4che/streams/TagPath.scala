@@ -81,6 +81,11 @@ sealed trait TagPath {
       false
   }
 
+  /**
+    *
+    * @param that tag path to test
+    * @return `true` if the input tag path (of depth n) is contained in the last n elements of this tag path
+    */
   def endsWith(that: TagPath): Boolean = {
     val matches = (this, that) match {
       case (thisSeq: TagPathSequence, thatSeq: TagPathSequence) =>

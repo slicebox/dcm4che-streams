@@ -81,7 +81,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             val nextState = if (info.hasFmi)
               InFmiHeader(FmiHeaderState(None, info.bigEndian, info.explicitVR, info.hasFmi, 0, None))
             else
-              InDatasetHeader(DatasetHeaderState(-1, info.bigEndian, info.explicitVR), None)
+              InDatasetHeader(DatasetHeaderState(0, info.bigEndian, info.explicitVR), None)
             ParseResult(maybePreamble, nextState)
           }.getOrElse(throw new DicomStreamException("Not a DICOM stream"))
         }
@@ -134,8 +134,8 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val part = readDatasetHeader(reader, state)
         val nextState = part.map {
           case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
-          case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(-1, bigEndian, state.explicitVR), inflater)
-          case DicomSequence(_ , _, _) => InDatasetHeader(state.copy(itemIndex = -1), inflater)
+          case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(itemIndex = 0, bigEndian, state.explicitVR), inflater)
+          case DicomSequence(_ , _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
           case DicomItem(index, _, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case DicomItemDelimitation(index, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case _ => InDatasetHeader(state, inflater)
@@ -174,13 +174,13 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
           case 0xFFFEE000 => // begin item
             ParseResult(
               Some(DicomItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
-              InValue(ValueState(state.bigEndian, valueLength, this))
+              InValue(ValueState(state.bigEndian, valueLength, this.copy(state = state.copy(itemIndex = state.itemIndex + 1))))
             )
           case 0xFFFEE0DD => // end fragments
             if (valueLength != 0) {
               log.warning(s"Unexpected fragments delimitation length $valueLength")
             }
-            ParseResult(Some(DicomFragmentsDelimitation(state.bigEndian, reader.take(headerLength))), InDatasetHeader(DatasetHeaderState(-1, state.bigEndian, state.explicitVR), inflater))
+            ParseResult(Some(DicomFragmentsDelimitation(state.bigEndian, reader.take(headerLength))), InDatasetHeader(DatasetHeaderState(0, state.bigEndian, state.explicitVR), inflater))
           case _ =>
             log.warning(s"Unexpected attribute (${tagToString(tag)}) in fragments with length=$valueLength")
             ParseResult(Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength + valueLength.toInt))), this)
@@ -215,12 +215,12 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
             } else
               new Inflater(true)
           InDatasetHeader(
-            DatasetHeaderState(-1, bigEndian, explicitVR),
+            DatasetHeaderState(0, bigEndian, explicitVR),
             Some(InflateData(inflater, new Array[Byte](chunkSize))))
         } else
           InDeflatedData(state.bigEndian)
       else
-        InDatasetHeader(DatasetHeaderState(-1, bigEndian, explicitVR), None)
+        InDatasetHeader(DatasetHeaderState(0, bigEndian, explicitVR), None)
     }
 
     private def hasZLIBHeader(firstTwoBytes: ByteString): Boolean = {
