@@ -16,7 +16,13 @@ object DicomModifyFlow {
     * @param modification a modification function
     * @param insert       if tag is absent in dataset it will be created and inserted when `true`
     */
-  case class TagModification(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean)
+  case class TagModification(tagPath: TagPathTag, matcher: TagPath => Boolean, modification: ByteString => ByteString, insert: Boolean)
+  object TagModification {
+    def contains(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
+      TagModification(tagPath, tagPath.contains, modification, insert)
+    def endsWith(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
+      TagModification(tagPath, tagPath.endsWith, modification, insert)
+  }
 
   /**
     * Modification flow for inserting or overwriting the values of specified attributes. When inserting a new attribute,
@@ -82,7 +88,7 @@ object DicomModifyFlow {
               .filter(m => isInDataset(m.tagPath, tagPathSequence))
               .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
             val modifyPart = sortedModifications
-              .find(_.tagPath.contains(tagPath))
+              .find(_.tagPath.contains(tagPath)) // both are tags so contains <=> equals here
               .map { tagModification =>
                 currentHeader = Some(header)
                 value = ByteString.empty

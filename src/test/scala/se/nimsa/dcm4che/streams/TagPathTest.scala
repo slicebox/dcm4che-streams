@@ -176,6 +176,37 @@ class TagPathTest extends FlatSpec with Matchers {
     aPath.contains(bPath) shouldBe false
   }
 
+  "The endsWith test" should "return true when a longer tag ends with a shorter" in {
+    val aPath = TagPath.fromSequence(1, 3).thenTag(2)
+    val bPath = TagPath.fromTag(2)
+    aPath.endsWith(bPath) shouldBe true
+  }
+
+  it should "return false when a shorter tag is compared to a longer" in {
+    val aPath = TagPath.fromSequence(1, 3).thenTag(2)
+    val bPath = TagPath.fromTag(2)
+    bPath.endsWith(aPath) shouldBe false
+  }
+
+  it should "return false when tag numbers do not match" in {
+    val aPath = TagPath.fromSequence(1, 3).thenTag(2)
+    val bPath = TagPath.fromTag(4)
+    aPath.endsWith(bPath) shouldBe false
+  }
+
+  it should "work also with deep sequences" in {
+    val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3, 5).thenTag(6)
+    val bPath = TagPath.fromSequence(2, 4).thenSequence(3, 5).thenTag(6)
+    aPath.endsWith(bPath) shouldBe true
+  }
+
+  it should "regard a path with wildcard as ending with the same path with item indices" in {
+    val aPath = TagPath.fromSequence(1).thenTag(2)
+    val bPath = TagPath.fromSequence(1, 4).thenTag(2)
+    aPath.endsWith(bPath) shouldBe true
+    bPath.endsWith(aPath) shouldBe false
+  }
+
   "Parsing a tag path" should "work for well-formed depth 0 tag paths" in {
     TagPath.parse("(0010,0010)") shouldBe TagPath.fromTag(Tag.PatientName)
   }
