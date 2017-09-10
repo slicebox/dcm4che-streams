@@ -81,7 +81,7 @@ object DicomParts {
 
   case class DicomItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomSequence(tag: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomSequence(tag: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
     override def toString = s"DicomSequence ${tagToString(tag)} ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 

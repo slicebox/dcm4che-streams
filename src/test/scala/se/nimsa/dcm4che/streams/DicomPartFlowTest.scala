@@ -236,7 +236,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "read DICOM data containing a sequence" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
@@ -254,7 +254,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "read DICOM data containing a sequence in a sequence" in {
-    val bytes = seqStart ++ itemNoLength ++ seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
@@ -387,7 +387,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "accept meta information encoded with implicit VR" in {
-    val bytes = preamble ++ tsuidExplicitLESelfImplicit ++ patientNameJohnDoe
+    val bytes = preamble ++ tsuidExplicitLEImplicitLE ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
@@ -411,6 +411,26 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PixelData, VR.OW, length)
       .expectValueChunk(ByteString.empty)
+      .expectDicomComplete()
+  }
+
+  it should "handle sequences and items of determinate length" in {
+    val bytes = studyDate ++ (seqStart(Tag.DerivationCodeSequence, 8 + 18 + 16) ++ itemStart(18 + 16) ++ studyDate ++ patientNameJohnDoe) ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
       .expectDicomComplete()
   }
 }

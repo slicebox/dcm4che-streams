@@ -135,7 +135,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val nextState = part.map {
           case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
           case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(itemIndex = 0, bigEndian, state.explicitVR), inflater)
-          case DicomSequence(_ , _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
+          case DicomSequence(_ , _, _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
           case DicomItem(index, _, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case DicomItemDelimitation(index, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case _ => InDatasetHeader(state, inflater)
@@ -254,7 +254,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         val updatedVr2 = if ((updatedVr1 == VR.UN) && valueLength == -1) VR.SQ else updatedVr1
         val bytes = reader.take(headerLength)
         if (updatedVr2 == VR.SQ)
-          Some(DicomSequence(tag, state.bigEndian, bytes))
+          Some(DicomSequence(tag, valueLength, state.bigEndian, bytes))
         else if (valueLength == -1)
           Some(DicomFragments(tag, updatedVr2, state.bigEndian, bytes))
         else

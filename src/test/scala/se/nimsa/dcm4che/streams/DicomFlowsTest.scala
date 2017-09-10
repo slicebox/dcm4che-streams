@@ -101,7 +101,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   it should "also apply to attributes in sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
@@ -416,7 +416,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   it should "not remove pixel data in sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ pixelData(100) ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ pixelData(100) ++ itemEnd ++ seqEnd
 
     val source = Source.single(bytes)
       .via(partFlow)
@@ -435,7 +435,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
   }
 
   it should "only remove waveform data when inside waveform sequence" in {
-    val bytes = waveformSeqStart ++ itemNoLength ++ patientNameJohnDoe ++ waveformData(100) ++ itemEnd ++ seqEnd ++ patientNameJohnDoe ++ waveformData(100)
+    val bytes = waveformSeqStart ++ itemStart ++ patientNameJohnDoe ++ waveformData(100) ++ itemEnd ++ seqEnd ++ patientNameJohnDoe ++ waveformData(100)
 
     val source = Source.single(bytes)
       .via(partFlow)

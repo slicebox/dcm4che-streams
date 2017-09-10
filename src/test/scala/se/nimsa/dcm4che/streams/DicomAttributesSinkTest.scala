@@ -144,12 +144,12 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
     assertEquivalentToDcm4che(bytes)
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences in sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
     assertEquivalentToDcm4che(bytes)
   }
 

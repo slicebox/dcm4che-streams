@@ -49,6 +49,12 @@ object TestUtils {
         case item: DicomItem if item.index == index => true
       }
 
+    def expectItem(index: Int, length: Int): PartProbe = probe
+      .request(1)
+      .expectNextChainingPF {
+        case item: DicomItem if item.index == index && item.length == length => true
+      }
+
     def expectItemDelimitation(): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
@@ -83,6 +89,12 @@ object TestUtils {
       .request(1)
       .expectNextChainingPF {
         case h: DicomSequence if h.tag == tag => true
+      }
+
+    def expectSequence(tag: Int, length: Int): PartProbe = probe
+      .request(1)
+      .expectNextChainingPF {
+        case h: DicomSequence if h.tag == tag && h.length == length => true
       }
 
     def expectSequenceDelimitation(): PartProbe = probe
