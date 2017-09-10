@@ -13,23 +13,17 @@ object TestData {
 
   // File Meta Information Version
   val fmiVersion: ByteString = tagToBytesLE(0x00020001) ++ ByteString('O', 'B', 0x00, 0x00) ++ intToBytesLE(0x00000002) ++ ByteString(0x00, 0x01)
-
-  // FMI with implicit little endian (not conforming to standard)
+  // (not conforming to standard)
   val fmiVersionImplicitLE: ByteString = tagToBytesLE(0x00020001) ++ intToBytesLE(0x00000002) ++ ByteString(0x00, 0x01)
-  val mediaStorageSOPClassUIDImplicitLE: ByteString = tagToBytesLE(0x00020002) ++ intToBytesLE(0x0000001A) ++ ByteString(UID.CTImageStorage) ++ pad0
-  val mediaStorageSOPInstanceUIDImplicitLE: ByteString = tagToBytesLE(0x00020003) ++ intToBytesLE(0x00000038) ++ ByteString("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735") ++ pad0
-  val tsuidExplicitLEImplicitLE: ByteString = tagToBytesLE(0x00020010) ++ intToBytesLE(0x00000014) ++ ByteString(UID.ExplicitVRLittleEndian) ++ pad0
 
-  // Media Storage SOP Class UID
-  // x00020002          UI         26         1.2.840.10008.5.1.4.1.1.2 (CT)    0x0 (padding)
   val mediaStorageSOPClassUID: ByteString = tagToBytesLE(0x00020002) ++ ByteString("UI") ++ shortToBytesLE(0x001A) ++ ByteString(UID.CTImageStorage) ++ pad0
   val sopClassUID: ByteString = tagToBytesLE(0x00080016) ++ ByteString("UI") ++ shortToBytesLE(0x001A) ++ ByteString(UID.CTImageStorage) ++ pad0
+  // (not conforming to standard)
+  val mediaStorageSOPClassUIDImplicitLE: ByteString = tagToBytesLE(0x00020002) ++ intToBytesLE(0x0000001A) ++ ByteString(UID.CTImageStorage) ++ pad0
+  val mediaStorageSOPInstanceUIDImplicitLE: ByteString = tagToBytesLE(0x00020003) ++ intToBytesLE(0x00000038) ++ ByteString("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735") ++ pad0
 
-  // (0008,0014) UI [1.2.840.113619.6.184]                   #  20, 1 InstanceCreatorUID
   val instanceCreatorUID: ByteString = tagToBytesLE(0x00080014) ++ ByteString("UI") ++ shortToBytesLE(0x0014) ++ ByteString("1.2.840.113619.6.184")
 
-  // Media Storage SOP Instance UID
-  // x00020003          UI         40         1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735   0x0 (padding)
   val mediaStorageSOPInstanceUID: ByteString = tagToBytesLE(0x00020003) ++ ByteString("UI") ++ shortToBytesLE(0x0038) ++ ByteString("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735") ++ pad0
 
   // Transfer Syntax UIDs
@@ -37,6 +31,8 @@ object TestData {
   val tsuidExplicitBE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0014) ++ ByteString(UID.ExplicitVRBigEndianRetired) ++ pad0
   val tsuidImplicitLE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0012) ++ ByteString(UID.ImplicitVRLittleEndian) ++ pad0
   val tsuidDeflatedExplicitLE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0016) ++ ByteString(UID.DeflatedExplicitVRLittleEndian)
+  // (not conforming to standard)
+  val tsuidExplicitLEImplicitLE: ByteString = tagToBytesLE(0x00020010) ++ intToBytesLE(0x00000014) ++ ByteString(UID.ExplicitVRLittleEndian) ++ pad0
 
   val patientNameJohnDoe: ByteString = tagToBytesLE(0x00100010) ++ ByteString("PN") ++ shortToBytesLE(0x0008) ++ ByteString("John^Doe")
   val patientNameJohnDoeBE: ByteString = tagToBytesBE(0x00100010) ++ ByteString("PN") ++ shortToBytesBE(0x0008) ++ ByteString("John^Doe")
