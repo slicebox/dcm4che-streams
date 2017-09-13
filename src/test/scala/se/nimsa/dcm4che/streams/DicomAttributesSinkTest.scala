@@ -84,12 +84,12 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for deflated DICOM files" in {
-    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
+    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(studyDate ++ patientNameJohnDoe)
     assertEquivalentToDcm4che(bytes)
   }
 
   it should "skip deflated data chunks" in {
-    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
+    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(studyDate ++ patientNameJohnDoe)
 
     val futureFlowAttributes = Source.single(bytes)
       .via(new DicomPartFlow(inflate = false))
@@ -144,7 +144,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences" in {
-    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
     assertEquivalentToDcm4che(bytes)
   }
 
