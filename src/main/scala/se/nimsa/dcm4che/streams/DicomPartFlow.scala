@@ -57,7 +57,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
 
     case class ValueState(bigEndian: Boolean, bytesLeft: Long, nextStep: ParseStep[DicomPart])
 
-    case class FragmentsState(itemIndex: Int, bigEndian: Boolean, explicitVR: Boolean) extends HeaderState
+    case class FragmentsState(fragmentIndex: Int, bigEndian: Boolean, explicitVR: Boolean) extends HeaderState
 
     abstract class DicomParseStep extends ParseStep[DicomPart] {
       override def onTruncation(reader: ByteReader): Unit = throw new DicomStreamException("DICOM file is truncated")
@@ -133,9 +133,13 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val part = readDatasetHeader(reader, state)
         val nextState = part.map {
-          case DicomHeader(_, _, length, _, bigEndian, _, _) => InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
-          case DicomFragments(_, _, bigEndian, _) => InFragments(FragmentsState(itemIndex = 0, bigEndian, state.explicitVR), inflater)
-          case DicomSequence(_ , _, _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
+          case DicomHeader(_, _, length, _, bigEndian, _, _) =>
+            if (length > 0)
+              InValue(ValueState(bigEndian, length, InDatasetHeader(state, inflater)))
+            else
+              InDatasetHeader(state, inflater)
+          case DicomFragments(_, _, _, bigEndian, _) => InFragments(FragmentsState(fragmentIndex = 0, bigEndian, state.explicitVR), inflater)
+          case DicomSequence(_, _, _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
           case DicomItem(index, _, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case DicomItemDelimitation(index, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case _ => InDatasetHeader(state, inflater)
@@ -171,16 +175,24 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
       def parse(reader: ByteReader): ParseResult[DicomPart] = {
         val (tag, _, headerLength, valueLength) = readHeader(reader, state)
         tag match {
-          case 0xFFFEE000 => // begin item
+
+          case 0xFFFEE000 => // begin fragment
+            val nextState =
+              if (valueLength > 0)
+                InValue(ValueState(state.bigEndian, valueLength, this.copy(state = state.copy(fragmentIndex = state.fragmentIndex + 1))))
+              else
+                this.copy(state = state.copy(fragmentIndex = state.fragmentIndex + 1))
             ParseResult(
-              Some(DicomItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
-              InValue(ValueState(state.bigEndian, valueLength, this.copy(state = state.copy(itemIndex = state.itemIndex + 1))))
+              Some(DicomFragment(state.fragmentIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
+              nextState
             )
+
           case 0xFFFEE0DD => // end fragments
             if (valueLength != 0) {
               log.warning(s"Unexpected fragments delimitation length $valueLength")
             }
             ParseResult(Some(DicomFragmentsDelimitation(state.bigEndian, reader.take(headerLength))), InDatasetHeader(DatasetHeaderState(0, state.bigEndian, state.explicitVR), inflater))
+
           case _ =>
             log.warning(s"Unexpected attribute (${tagToString(tag)}) in fragments with length=$valueLength")
             ParseResult(Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength + valueLength.toInt))), this)
@@ -256,7 +268,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
         if (updatedVr2 == VR.SQ)
           Some(DicomSequence(tag, valueLength, state.bigEndian, bytes))
         else if (valueLength == -1)
-          Some(DicomFragments(tag, updatedVr2, state.bigEndian, bytes))
+          Some(DicomFragments(tag, valueLength, updatedVr2, state.bigEndian, bytes))
         else
           Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else

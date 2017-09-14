@@ -114,7 +114,7 @@ object DicomAttributesSink {
               Some(new Fragments(null, fragments.tag, fragments.vr, fragments.bigEndian, 10))))
           attributesSinkData.copy(maybeAttributesData = Some(attributesData))
 
-        case dicomFragment: DicomFragment =>
+        case dicomFragment: DicomFragmentData =>
           attributesSinkData.maybeAttributesData.foreach { attributesData =>
             attributesData.currentFragments.foreach { fragments =>
               val bytes = dicomFragment.bytes.toArray
@@ -139,6 +139,16 @@ object DicomAttributesSink {
             }
           }
           attributesSinkData.copy(maybeAttributesData = attributesSinkData.maybeAttributesData.map(_.copy(currentFragments = None)))
+
+        case _: DicomItem =>
+          val maybeAttributesData = attributesSinkData.maybeAttributesData.flatMap { attributesData =>
+            attributesData.sequenceStack.headOption.map { seq =>
+              val attributes = new Attributes(seq.getParent.bigEndian)
+              seq.add(attributes)
+              attributesData.copy(attributesStack = attributes +: attributesData.attributesStack)
+            }
+          }
+          attributesSinkData.copy(maybeAttributesData = maybeAttributesData)
 
         case _: DicomItem =>
           val maybeAttributesData = attributesSinkData.maybeAttributesData.flatMap { attributesData =>

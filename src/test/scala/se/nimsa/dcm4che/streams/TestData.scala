@@ -39,16 +39,18 @@ object TestData {
   val patientNameJohnDoeImplicit: ByteString = tagToBytesLE(0x00100010) ++ intToBytesLE(0x00000008) ++ ByteString("John^Doe")
   val studyDate: ByteString = tagToBytesLE(0x00080020) ++ ByteString("DA") ++ shortToBytesLE(0x0008) ++ ByteString("19700101")
 
-  def itemStart(): ByteString = itemStart(0xFFFFFFFF)
-  def itemStart(length: Int): ByteString = tagToBytesLE(0xFFFEE000) ++ intToBytesLE(length)
+  def item(): ByteString = item(0xFFFFFFFF)
+  def item(length: Int): ByteString = tagToBytesLE(0xFFFEE000) ++ intToBytesLE(length)
+  def fragment(length: Int): ByteString = item(length)
 
   val itemEnd: ByteString = tagToBytesLE(0xFFFEE00D) ++ intToBytesLE(0x00000000)
-  val seqEnd: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000000)
-  val seqEndNonZeroLength: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000010)
+  val sequenceEnd: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000000)
+  val fragmentsEnd: ByteString = sequenceEnd
+  val sequenceEndNonZeroLength: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000010)
   val pixeDataFragments: ByteString = tagToBytesLE(0x7FE00010) ++ ByteString('O', 'W', 0, 0) ++ intToBytesLE(0xFFFFFFFF)
 
-  def seqStart(tag: Int): ByteString = seqStart(tag, 0xFFFFFFFF)
-  def seqStart(tag: Int, length: Int): ByteString = tagToBytesLE(tag) ++ ByteString('S', 'Q', 0, 0) ++ intToBytesLE(length)
+  def sequence(tag: Int): ByteString = sequence(tag, 0xFFFFFFFF)
+  def sequence(tag: Int, length: Int): ByteString = tagToBytesLE(tag) ++ ByteString('S', 'Q', 0, 0) ++ intToBytesLE(length)
 
   val waveformSeqStart: ByteString = tagToBytesLE(0x54000100) ++ ByteString('S', 'Q', 0, 0) ++ intToBytesLE(0xFFFFFFFF)
 

@@ -54,12 +54,12 @@ object DicomFlows {
       () =>
         var currentData: Option[DicomAttribute] = None
         var inFragments = false
-        var currentFragment: Option[DicomFragment] = None
+        var currentFragment: Option[DicomFragmentData] = None
 
       {
         case header: DicomHeader =>
           currentData = Some(DicomAttribute(header, Seq.empty))
-          Nil
+          if (header.length <= 0) currentData.get :: Nil else Nil
         case fragments: DicomFragments =>
           inFragments = true
           fragments :: Nil
@@ -67,9 +67,9 @@ object DicomFlows {
           currentFragment = None
           inFragments = false
           endFragments :: Nil
-        case item: DicomItem if inFragments =>
-          currentFragment = Some(DicomFragment(item.bigEndian, Seq.empty))
-          Nil
+        case fragment: DicomFragment =>
+          currentFragment = Some(DicomFragmentData(fragment.bigEndian, Seq.empty))
+          if (fragment.length <= 0) currentFragment.get :: Nil else Nil
         case valueChunk: DicomValueChunk if inFragments =>
           currentFragment = currentFragment.map(f => f.copy(valueChunks = f.valueChunks :+ valueChunk))
           if (valueChunk.last)
@@ -78,10 +78,7 @@ object DicomFlows {
             Nil
         case valueChunk: DicomValueChunk =>
           currentData = currentData.map(d => d.copy(valueChunks = d.valueChunks :+ valueChunk))
-          if (valueChunk.last)
-            currentData.map(_ :: Nil).getOrElse(Nil)
-          else
-            Nil
+          if (valueChunk.last) currentData.map(_ :: Nil).getOrElse(Nil) else Nil
         case part => part :: Nil
       }
     }
@@ -182,7 +179,7 @@ object DicomFlows {
               dicomHeader :: Nil
             }
           case valueChunk: DicomValueChunk => if (discarding) Nil else valueChunk :: Nil
-          case fragment: DicomFragment => if (discarding) Nil else fragment :: Nil
+          case fragment: DicomFragmentData => if (discarding) Nil else fragment :: Nil
 
           case dicomFragments: DicomFragments =>
             discarding = shouldDiscard(dicomFragments.tag, isWhitelist)
@@ -511,4 +508,60 @@ object DicomFlows {
         case part => part :: Nil
       }
     }
+
+  /**
+    * Sets any sequences and/or items with determinate length to undeterminate length (length = -1) and inserts
+    * delimiters.
+    *
+    * Most flows dealing with sequences require this filter to function as intended, see the corresponding flow
+    * documentation.
+    */
+  val sequenceLengthFilter: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+    .statefulMapConcat {
+      val undeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
+      val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
+      def subtractLength(seqsAndItems: List[DicomPart], part: DicomPart) = seqsAndItems.map {
+        case item: DicomItem => item.copy(length = item.length - part.bytes.length)
+        case sequence: DicomSequence => sequence.copy(length = sequence.length - part.bytes.length)
+      }
+
+      () =>
+        var partStack: List[DicomPart] = Nil
+
+        def maybeDelimit(): List[DicomPart] = {
+          val delimits = partStack
+            .filter { // find items and sequences that have ended
+              case item: DicomItem => item.length <= 0
+              case sequence: DicomSequence => sequence.length <= 0
+            }
+            .map { // create delimiters for those
+              case item: DicomItem =>
+                DicomItemDelimitation(item.index, item.bigEndian, tagToBytes(0xFFFEE00D, item.bigEndian) ++ zeroBytes)
+              case sequence: DicomSequence =>
+                DicomSequenceDelimitation(sequence.bigEndian, tagToBytes(0xFFFEE0DD, sequence.bigEndian) ++ zeroBytes)
+            }
+          partStack = partStack.filter { // only keep items and sequences with bytes left to subtract
+            case item: DicomItem => item.length > 0
+            case sequence: DicomSequence => sequence.length > 0
+          }
+          delimits // these will be returned and inserted in stream
+        }
+
+      {
+        case sequence: DicomSequence if sequence.length >= 0 =>
+          partStack = sequence +: subtractLength(partStack, sequence)
+          sequence.copy(length = -1, bytes = sequence.bytes.take(4) ++ undeterminateBytes) :: Nil
+
+        case item: DicomItem if item.length >= 0 =>
+          partStack = item +: subtractLength(partStack, item)
+          item.copy(length = -1, bytes = item.bytes.take(4) ++ undeterminateBytes) :: Nil
+
+        case part =>
+          partStack = subtractLength(partStack, part)
+          part :: maybeDelimit()
+      }
+    }
+
 }
+
+

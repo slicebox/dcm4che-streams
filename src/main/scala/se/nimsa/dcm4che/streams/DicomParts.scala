@@ -79,15 +79,19 @@ object DicomParts {
     override def toString = s"DicomItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
+  case class DicomFragment(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+    override def toString = s"DicomFragment index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+  }
+
   case class DicomItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
   case class DicomSequence(tag: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomSequence ${tagToString(tag)} ${if (bigEndian) "(big endian) " else ""}$bytes"
+    override def toString = s"DicomSequence ${tagToString(tag)} length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomFragments(tag: Int, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomFragments(tag: Int, length: Long, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
     override def toString = s"DicomFragments ${tagToString(tag)} $vr ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
@@ -95,7 +99,7 @@ object DicomParts {
 
   case class DicomUnknownPart(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomFragment(bigEndian: Boolean, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
+  case class DicomFragmentData(bigEndian: Boolean, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
     def bytes: ByteString = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
   }
 

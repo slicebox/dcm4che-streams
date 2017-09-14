@@ -112,7 +112,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with fragments" in {
-    val bytes = pixeDataFragments ++ itemStart(4) ++ ByteString(1, 2, 3, 4) ++ itemStart(4) ++ ByteString(5, 6, 7, 8) ++ seqEnd
+    val bytes = pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragment(4) ++ ByteString(5, 6, 7, 8) ++ fragmentsEnd
 
     val (maybeFmi, maybeDataset) = toAttributes(bytes)
     val futureFlowAttributes = toFlowAttributes(bytes)
@@ -144,12 +144,12 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences" in {
-    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
     assertEquivalentToDcm4che(bytes)
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences in sequences" in {
-    val bytes = seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ seqStart(Tag.DerivationCodeSequence) ++ itemStart ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd ++ studyDate ++ itemEnd ++ sequenceEnd
     assertEquivalentToDcm4che(bytes)
   }
 
