@@ -13,10 +13,31 @@ object DicomModifyFlow {
     * Class used to specify modifications to individual attributes of a dataset
     *
     * @param tagPath      tag path
+    * @param matches      function used to determine if another tag path is matching the tag path of this modification
+    *                     (may mean e.g. equals, contains or ends with)
     * @param modification a modification function
     * @param insert       if tag is absent in dataset it will be created and inserted when `true`
     */
-  case class TagModification(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean)
+  case class TagModification(tagPath: TagPathTag, matches: TagPath => Boolean, modification: ByteString => ByteString, insert: Boolean)
+  object TagModification {
+
+    /**
+      * Modification that will modify dataset elements contained within its tag path. "Contained" means equals unless
+      * item wildcards are used. E.g. if the modification tag path is (0008,9215)[*}.(0010,0010) the path
+      * (0008,9215)[1].(0010,0010) will be contained in that path along with any other item indices. Useful for changing
+      * specific attributes in a dataset.
+      */
+    def contains(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
+      TagModification(tagPath, tagPath.contains, modification, insert)
+
+    /**
+      * Modification that will modify dataset elements where the corresponding tag path ends with the tag path of this
+      * modification. E.g. both the dataset attributes (0010,0010) and (0008,9215)[1].(0010,0010) will be modified if
+      * this tag path is (0010,0010). Useful for changing all instances of a certain attribute.
+      */
+    def endsWith(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
+      TagModification(tagPath, _.endsWith(tagPath), modification, insert)
+  }
 
   /**
     * Modification flow for inserting or overwriting the values of specified attributes. When inserting a new attribute,
@@ -82,7 +103,7 @@ object DicomModifyFlow {
               .filter(m => isInDataset(m.tagPath, tagPathSequence))
               .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
             val modifyPart = sortedModifications
-              .find(_.tagPath.contains(tagPath))
+              .find(_.matches(tagPath))
               .map { tagModification =>
                 currentHeader = Some(header)
                 value = ByteString.empty

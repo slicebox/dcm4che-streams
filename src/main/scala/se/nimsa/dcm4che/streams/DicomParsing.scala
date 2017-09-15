@@ -44,7 +44,7 @@ trait DicomParsing {
     }
   }
 
-  case class Attribute(tag: Int, vr: VR, length: Int, value: ByteString)
+  case class Attribute(tag: Int, vr: VR, length: Long, value: ByteString)
 
   def dicomInfo(data: ByteString): Option[Info] =
     dicomInfo(data, assumeBigEndian = false)
@@ -61,7 +61,7 @@ trait DicomParsing {
           bigEndian = assumeBigEndian,
           explicitVR = true,
           hasFmi = isFileMetaInformation(tag1)))
-      else if (bytesToInt(data.drop(4), assumeBigEndian) >= 0)
+      else if (intToUnsignedLong(bytesToInt(data.drop(4), assumeBigEndian)) >= 0)
         if (assumeBigEndian)
           throw new DicomStreamException("Implicit VR Big Endian encoded DICOM Stream")
         else
@@ -94,12 +94,13 @@ trait DicomParsing {
     }
 
     val (tag, vr, headerLength, length) = maybeHeader.get
-    val value = data.drop(headerLength).take(length)
+    val value = data.drop(headerLength).take(length.toInt)
     Attribute(tag, vr, length, valueWithoutPadding(value))
   }
 
+  def lengthToLong(length: Int): Long = if (length == -1) -1L else intToUnsignedLong(length)
 
-  def readHeader(buffer: ByteString, assumeBigEndian: Boolean, explicitVR: Boolean): Option[(Int, VR, Int, Int)] = {
+  def readHeader(buffer: ByteString, assumeBigEndian: Boolean, explicitVR: Boolean): Option[(Int, VR, Int, Long)] = {
     if (explicitVR) {
       readHeaderExplicitVR(buffer, assumeBigEndian)
     } else {
@@ -114,7 +115,7 @@ trait DicomParsing {
     * @param assumeBigEndian true if big endian, false otherwise
     * @return
     */
-  def readHeaderExplicitVR(buffer: ByteString, assumeBigEndian: Boolean): Option[(Int, VR, Int, Int)] = {
+  def readHeaderExplicitVR(buffer: ByteString, assumeBigEndian: Boolean): Option[(Int, VR, Int, Long)] = {
     if (buffer.size >= 8) {
       val (tag, vr) = DicomParsing.tagVr(buffer, assumeBigEndian, explicitVr = true)
       if (vr == null) {
@@ -124,13 +125,13 @@ trait DicomParsing {
           // length of sequence undefined, not supported
           None
         } else {
-          Some((tag, vr, 8, bytesToInt(buffer.drop(4), assumeBigEndian)))
+          Some((tag, vr, 8, lengthToLong(bytesToInt(buffer.drop(4), assumeBigEndian))))
         }
       } else if (vr.headerLength == 8) {
-        Some((tag, vr, 8, bytesToUShort(buffer.drop(6), assumeBigEndian)))
+        Some((tag, vr, 8, lengthToLong(bytesToUShort(buffer.drop(6), assumeBigEndian))))
       } else {
         if (buffer.size >= 12) {
-          Some((tag, vr, 12, bytesToInt(buffer.drop(8), assumeBigEndian)))
+          Some((tag, vr, 12, lengthToLong(bytesToInt(buffer.drop(8), assumeBigEndian))))
         } else {
           None
         }
@@ -146,7 +147,7 @@ trait DicomParsing {
     * @param buffer current buffer
     * @return
     */
-  def readHeaderImplicitVR(buffer: ByteString): Option[(Int, VR, Int, Int)] =
+  def readHeaderImplicitVR(buffer: ByteString): Option[(Int, VR, Int, Long)] =
     if (buffer.size >= 8) {
       val assumeBigEndian = false // implicit VR
       val tag = bytesToTag(buffer, assumeBigEndian)
@@ -156,9 +157,9 @@ trait DicomParsing {
         if (valueLength == -1)
           None // special case: sequences, with undefined length '0xFFFFFFFF' not supported
         else
-          Some((tag, null, 8, valueLength))
+          Some((tag, null, 8, lengthToLong(valueLength)))
       else
-        Some((tag, vr, 8, valueLength))
+        Some((tag, vr, 8, lengthToLong(valueLength)))
     } else
       None
 

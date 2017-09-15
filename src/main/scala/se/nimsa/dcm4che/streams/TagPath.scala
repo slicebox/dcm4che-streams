@@ -28,9 +28,9 @@ sealed trait TagPath {
 
   /**
     * Test if this tag path is less than the input path, comparing their parts pairwise according to the following rules
-    *  (1) a is less than b if the a's tag number is less b's tag number
-    *  (2) a is less than b if tag numbers are equal and a's item index is less than b's item index
-    *  (3) a is less than b if tag numbers are equal, a points to an item index and b points to all indices (wildcard)
+    * (1) a is less than b if the a's tag number is less b's tag number
+    * (2) a is less than b if tag numbers are equal and a's item index is less than b's item index
+    * (3) a is less than b if tag numbers are equal, a points to an item index and b points to all indices (wildcard)
     *
     * @param that the tag path to compare with
     * @return `true` if this tag path is less than the input path
@@ -54,7 +54,7 @@ sealed trait TagPath {
               }
           }
         case (thisPath, thatPath) =>
-          thisPath.tag < thatPath.tag
+          intToUnsignedLong(thisPath.tag) < intToUnsignedLong(thatPath.tag)
       }
       .map(_ => true)
       .getOrElse(thisList.length < thatList.length)
@@ -71,14 +71,37 @@ sealed trait TagPath {
     if (thisList.length >= thatList.length)
       thisList.zip(thatList).forall {
         case (thisSeq: TagPathSequence, thatSeq: TagPathSequence) =>
-            thisSeq.tag == thatSeq.tag && (thisSeq.item.isEmpty || thatSeq.item.contains(thisSeq.item.get))
+          thisSeq.tag == thatSeq.tag && (thisSeq.item.isEmpty || thatSeq.item.contains(thisSeq.item.get))
         case (thisTag: TagPathTag, thatTag: TagPathTag) =>
-            thisTag.tag == thatTag.tag
+          thisTag.tag == thatTag.tag
         case _ =>
-            false
+          false
       }
     else
       false
+  }
+
+  /**
+    *
+    * @param that tag path to test
+    * @return `true` if the input tag path (of depth n) is contained in the last n elements of this tag path
+    */
+  def endsWith(that: TagPath): Boolean = {
+    val matches = (this, that) match {
+      case (thisSeq: TagPathSequence, thatSeq: TagPathSequence) =>
+        thisSeq.tag == thatSeq.tag && (thisSeq.item.isEmpty || thatSeq.item.contains(thisSeq.item.get))
+      case (thisTag: TagPathTag, thatTag: TagPathTag) =>
+        thisTag.tag == thatTag.tag
+      case _ =>
+        false
+    }
+    (this.previous, that.previous) match {
+      case _ if !matches => false
+      case (None, None) => true
+      case (Some(_), None) => true
+      case (None, Some(_)) => false
+      case (Some(thisPrev), Some(thatPrev)) => thisPrev.endsWith(thatPrev)
+    }
   }
 
   /**
@@ -201,13 +224,14 @@ object TagPath {
 
   /**
     * Parse the string representation of a tag path into a tag path object.
+    *
     * @param s string to parse
     * @return a tag path
     * @throws IllegalArgumentException for malformed input
     */
   def parse(s: String): TagPath = {
     def isSeq(s: String) = s.length > 11
-    def parseTagNumber(s: String) = Integer.parseInt(s.substring(1,5) + s.substring(6,10), 16)
+    def parseTagNumber(s: String) = Integer.parseInt(s.substring(1, 5) + s.substring(6, 10), 16)
     def parseIndex(s: String) = if (s.charAt(12) == '*') None else Some(Integer.parseInt(s.substring(12, s.length - 1)))
     def createTag(s: String) = TagPath.fromTag(parseTagNumber(s))
     def createSeq(s: String) = parseIndex(s)
@@ -224,7 +248,7 @@ object TagPath {
     try {
       seqTags.headOption.map(first => seqTags.tail.foldLeft(createSeq(first))((path, tag) => addSeq(tag, path))) match {
         case Some(path) => if (isSeq(lastTag)) addSeq(lastTag, path) else addTag(lastTag, path)
-        case None       => if (isSeq(lastTag)) createSeq(lastTag) else createTag(lastTag)
+        case None => if (isSeq(lastTag)) createSeq(lastTag) else createTag(lastTag)
       }
     } catch {
       case e: Exception => throw new IllegalArgumentException("Tag path could not be parsed", e)

@@ -40,13 +40,13 @@ object TestUtils {
     def expectValueChunk(bytes: ByteString): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case chunk: DicomValueChunk => chunk.bytes == bytes
+        case chunk: DicomValueChunk if chunk.bytes == bytes => true
       }
 
     def expectItem(index: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case item: DicomItem => item.index == index
+        case item: DicomItem if item.index == index => true
       }
 
     def expectItemDelimitation(): PartProbe = probe
@@ -73,7 +73,7 @@ object TestUtils {
         case h: DicomHeader if h.tag == tag => true
       }
 
-    def expectHeader(tag: Int, vr: VR, length: Int): PartProbe = probe
+    def expectHeader(tag: Int, vr: VR, length: Long): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
         case h: DicomHeader if h.tag == tag && h.vr == vr && h.length == length => true
@@ -126,7 +126,7 @@ object TestUtils {
     def expectAttributesPart(attributesPart: DicomAttributes): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case p: DicomAttributes => p == attributesPart
+        case p: DicomAttributes if p == attributesPart => true
       }
   }
 

@@ -54,6 +54,6 @@ object TestData {
   val tsuidExplicitLEImplicitLE = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
 
   def pixelData(length: Int): ByteString = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x42, 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
-  def waveformData(length: Int): ByteString = ByteString(0x00, 0x54, 0x10, 0x10, 0x4f, 0x42, 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
+  def waveformData(length: Int): ByteString = ByteString(0x00, 0x54, 0x10, 0x10, 0x4f, 0x57, 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
 
 }

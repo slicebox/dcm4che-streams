@@ -6,7 +6,7 @@ import akka.stream.scaladsl.Source
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
-import org.dcm4che3.data.Tag
+import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 
 import scala.concurrent.ExecutionContextExecutor
@@ -194,9 +194,9 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(0)
-      .expectValueChunk()
       .expectItem(1)
+      .expectValueChunk()
+      .expectItem(2)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
@@ -210,9 +210,9 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(0)
-      .expectValueChunk()
       .expectItem(1)
+      .expectValueChunk()
+      .expectItem(2)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
@@ -226,10 +226,10 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(0)
+      .expectItem(1)
       .expectValueChunk()
       .expectUnknownPart()
-      .expectItem(1)
+      .expectItem(2)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
@@ -243,7 +243,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectHeader(Tag.StudyDate)
@@ -261,9 +261,9 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectItemDelimitation()
@@ -398,6 +398,19 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectValueChunk()
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "handle values with length larger than the signed int range" in {
+    val length = Int.MaxValue.toLong + 1
+    val bytes = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x57, 0, 0) ++ intToBytes(length.toInt, bigEndian = false)
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PixelData, VR.OW, length)
+      .expectValueChunk(ByteString.empty)
       .expectDicomComplete()
   }
 }

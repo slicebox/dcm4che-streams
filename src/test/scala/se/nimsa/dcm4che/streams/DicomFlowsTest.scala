@@ -260,8 +260,8 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .via(new DicomPartFlow())
       .via(deflateDatasetFlow())
       .via(modifyFlow(
-        TagModification(TagPath.fromTag(Tag.FileMetaInformationGroupLength), _ => fmiGroupLength(tsuidDeflatedExplicitLE), insert = false),
-        TagModification(TagPath.fromTag(Tag.TransferSyntaxUID), _ => tsuidDeflatedExplicitLE.drop(8), insert = false)))
+        TagModification.contains(TagPath.fromTag(Tag.FileMetaInformationGroupLength), _ => fmiGroupLength(tsuidDeflatedExplicitLE), insert = false),
+        TagModification.contains(TagPath.fromTag(Tag.TransferSyntaxUID), _ => tsuidDeflatedExplicitLE.drop(8), insert = false)))
       .map(_.bytes)
       .via(new DicomPartFlow())
 
@@ -386,6 +386,17 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
+  it should "fail if max buffer size is exceeded" in {
+    val bytes = studyDate ++ patientNameJohnDoe ++ pixelData(2000)
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow(chunkSize = 500))
+      .via(collectAttributesFlow(_ == Tag.PatientName, _ > Tag.PixelData, maxBufferSize = 1000))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectDicomError()
+  }
+
   "The bulk data filter flow" should "remove pixel data" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe ++ pixelData(1000)
 
@@ -413,7 +424,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectHeader(Tag.PixelData)
@@ -432,7 +443,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.WaveformSequence)
-      .expectItem(0)
+      .expectItem(1)
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectItemDelimitation()
@@ -532,10 +543,38 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
-      .expectValueChunk(ByteString(0,0,0,0))
+      .expectValueChunk(ByteString(0, 0, 0, 0))
       .expectHeader(Tag.PatientName)
       .expectValueChunk()
       .expectDicomComplete()
   }
+
+  it should "ignore DICOM parts of unknown type" in {
+    case object SomePart extends DicomPart {
+      def bigEndian: Boolean = false
+      def bytes: ByteString = ByteString.empty
+    }
+
+    val correctLength = tsuidExplicitLE.length
+    val bytes = preamble ++ tsuidExplicitLE // missing file meta information group length
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .prepend(Source.single(SomePart))
+      .via(fmiGroupLengthFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .request(1)
+      .expectNextChainingPF {
+        case SomePart => true
+      }
+      .expectPreamble()
+      .expectHeader(Tag.FileMetaInformationGroupLength)
+      .expectValueChunk(intToBytesLE(correctLength))
+      .expectHeader(Tag.TransferSyntaxUID)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
 }
 
