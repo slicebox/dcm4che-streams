@@ -118,7 +118,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectDicomComplete()
   }
 
-  it should "also apply to attributes in sequences" in {
+  it should "only apply to attributes in the root dataset" in {
     val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
@@ -126,8 +126,6 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .via(whitelistFilter(Seq(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectHeader(Tag.StudyDate)
-      .expectValueChunk()
       .expectDicomComplete()
   }
 

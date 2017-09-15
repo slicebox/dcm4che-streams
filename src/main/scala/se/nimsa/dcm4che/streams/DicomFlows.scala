@@ -152,65 +152,62 @@ object DicomFlows {
   private def tagFilter(tagCondition: Int => Boolean, isWhitelist: Boolean, keepPreamble: Boolean): Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .statefulMapConcat {
-        () =>
-          var discarding = false
 
-          def shouldDiscard(tag: Int, isWhitelist: Boolean) = {
-            if (isWhitelist) {
-              !tagCondition(tag) // Whitelist: condition true => keep
-            } else {
-              tagCondition(tag) // Blacklist: condition true => discard
-            }
+        def shouldDiscard(tag: Int, isWhitelist: Boolean) = {
+          if (isWhitelist) {
+            !tagCondition(tag) // Whitelist: condition true => keep
+          } else {
+            tagCondition(tag) // Blacklist: condition true => discard
           }
+        }
+
+        () =>
+          var discarding = isWhitelist
+          var discardingSequenceStack: List[DicomSequence] = Nil
+          def inDiscardingSequence = discardingSequenceStack.nonEmpty
 
         {
           case dicomPreamble: DicomPreamble =>
-            if (keepPreamble) {
-              dicomPreamble :: Nil
-            } else {
-              Nil
-            }
+            if (keepPreamble) dicomPreamble :: Nil else Nil
 
-          case dicomHeader: DicomHeader =>
-            discarding = shouldDiscard(dicomHeader.tag, isWhitelist)
-            if (discarding) {
+          case sequence: DicomSequence =>
+            if (discarding || inDiscardingSequence || shouldDiscard(sequence.tag, isWhitelist)) {
+              discardingSequenceStack = sequence +: discardingSequenceStack
               Nil
-            } else {
-              dicomHeader :: Nil
-            }
-          case valueChunk: DicomValueChunk => if (discarding) Nil else valueChunk :: Nil
-          case fragment: DicomFragmentData => if (discarding) Nil else fragment :: Nil
+            } else sequence :: Nil
+
+          case sequenceDelimitation: DicomSequenceDelimitation =>
+            discardingSequenceStack = discardingSequenceStack.tail
+            if (discarding || inDiscardingSequence) Nil else sequenceDelimitation :: Nil
+
+          case valueChunk: DicomValueChunk =>
+            if (discarding || inDiscardingSequence) {
+              if (valueChunk.last)
+                discarding = isWhitelist
+              Nil
+            } else valueChunk :: Nil
+
+          case header: DicomHeader =>
+            discarding = shouldDiscard(header.tag, isWhitelist)
+            if (discarding || inDiscardingSequence) {
+              if (header.length <= 0)
+                discarding = isWhitelist
+              Nil
+            } else header :: Nil
 
           case dicomFragments: DicomFragments =>
             discarding = shouldDiscard(dicomFragments.tag, isWhitelist)
-            if (discarding) {
-              Nil
-            } else {
-              dicomFragments :: Nil
-            }
-
-          case _: DicomItem if discarding => Nil
-          case _: DicomItemDelimitation if discarding => Nil
-          case _: DicomFragmentsDelimitation if discarding => Nil
-
-          case _: DicomSequence if discarding => Nil
-          case _: DicomSequenceDelimitation if discarding => Nil
+            if (discarding || inDiscardingSequence) Nil else dicomFragments :: Nil
 
           case dicomAttribute: DicomAttribute =>
             discarding = shouldDiscard(dicomAttribute.header.tag, isWhitelist)
-            if (discarding) {
+            if (discarding || inDiscardingSequence) {
+              discarding = isWhitelist
               Nil
-            } else {
-              dicomAttribute :: Nil
-            }
+            } else dicomAttribute :: Nil
 
-          case dicomPart =>
-            if (isWhitelist) {
-              Nil
-            } else {
-              discarding = false
-              dicomPart :: Nil
-            }
+          case part: DicomPart =>
+            if (discarding || inDiscardingSequence) Nil else part :: Nil
         }
       }
 
