@@ -105,47 +105,64 @@ object DicomModifyFlow {
             val modifyPart = sortedModifications
               .find(_.matches(tagPath))
               .map { tagModification =>
-                currentHeader = Some(header)
-                value = ByteString.empty
-                currentModification = Some(tagModification)
-                Nil
+                if (header.length > 0) {
+                  currentHeader = Some(header)
+                  currentModification = Some(tagModification)
+                  value = ByteString.empty
+                  Nil
+                } else {
+                  val newValue = tagModification.modification(ByteString.empty)
+                  val newHeader = header.withUpdatedLength(newValue.length)
+                  val chunkOrNot = if (newValue.nonEmpty) DicomValueChunk(bigEndian, newValue, last = true) :: Nil else Nil
+                  newHeader :: chunkOrNot
+                }
               }
               .getOrElse(header :: Nil)
             currentTagPath = Some(tagPath)
             insertParts ::: modifyPart
+
           case chunk: DicomValueChunk if currentModification.isDefined && currentHeader.isDefined =>
             value = value ++ chunk.bytes
             if (chunk.last) {
               val newValue = currentModification.get.modification(value)
-              val newHeader = currentHeader.get.withUpdatedLength(newValue.length.toShort)
+              val newHeader = currentHeader.get.withUpdatedLength(newValue.length)
               currentModification = None
               currentHeader = None
-              newHeader :: DicomValueChunk(bigEndian, newValue, last = true) :: Nil
+              val chunkOrNot = if (newValue.nonEmpty) DicomValueChunk(bigEndian, newValue, last = true) :: Nil else Nil
+              newHeader :: chunkOrNot
             } else
               Nil
+
           case sequence: DicomSequence =>
             tagPathSequence = tagPathSequence.map(_.thenSequence(sequence.tag)).orElse(Some(TagPath.fromSequence(sequence.tag)))
             sequence :: Nil
+
           case sequenceDelimitation: DicomSequenceDelimitation =>
             tagPathSequence = tagPathSequence.flatMap(_.previous)
             sequenceDelimitation :: Nil
+
           case fragments: DicomFragments =>
             tagPathSequence = tagPathSequence.map(_.thenSequence(fragments.tag)).orElse(Some(TagPath.fromSequence(fragments.tag)))
             fragments :: Nil
+
           case fragmentsDelimitation: DicomFragmentsDelimitation =>
             tagPathSequence = tagPathSequence.flatMap(_.previous)
             fragmentsDelimitation :: Nil
+
           case item: DicomItem =>
             tagPathSequence = tagPathSequence.flatMap(s => s.previous.map(_.thenSequence(s.tag, item.index)).orElse(Some(TagPath.fromSequence(s.tag, item.index))))
             item :: Nil
+
           case itemDelimitation: DicomItemDelimitation =>
             itemDelimitation :: Nil
+
           case DicomEndMarker =>
             sortedModifications
               .filter(_.insert)
               .filter(_.tagPath.isRoot)
               .filter(m => currentTagPath.exists(_ < m.tagPath))
               .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
+
           case part =>
             part :: Nil
         }

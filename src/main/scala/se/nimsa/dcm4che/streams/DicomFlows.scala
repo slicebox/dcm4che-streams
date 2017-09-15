@@ -382,6 +382,10 @@ object DicomFlows {
 
               case header: DicomHeader if tagCondition(header.tag) =>
                 currentAttribute = Some(DicomAttribute(header, Seq.empty))
+                if (header.length == 0) {
+                  attributes = attributes :+ currentAttribute.get
+                  currentAttribute = None
+                }
                 Nil
 
               case _: DicomHeader =>
@@ -397,9 +401,8 @@ object DicomFlows {
                     if (valueChunk.last) {
                       attributes = attributes :+ updatedAttribute
                       currentAttribute = None
-                      Nil
-                    } else
-                      Nil
+                    }
+                    Nil
 
                   case None => Nil
                 }

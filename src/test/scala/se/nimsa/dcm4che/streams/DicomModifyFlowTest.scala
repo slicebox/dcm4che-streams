@@ -36,7 +36,6 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate, VR.DA, 0)
-      .expectValueChunk(ByteString.empty)
       .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
       .expectValueChunk(mikeBytes)
       .expectDicomComplete()
@@ -93,7 +92,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectDicomComplete()
   }
 
-  it should "not modify, not insert, when 'insert' attributes are already present" in {
+  it should "modify, not insert, when 'insert' attributes are already present" in {
     val bytes = studyDate ++ patientNameJohnDoe
 
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
@@ -106,7 +105,6 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate, VR.DA, 0)
-      .expectValueChunk(ByteString.empty)
       .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
       .expectValueChunk(mikeBytes)
       .expectDicomComplete()
