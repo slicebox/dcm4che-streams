@@ -177,7 +177,7 @@ object DicomFlows {
             } else sequence :: Nil
 
           case sequenceDelimitation: DicomSequenceDelimitation =>
-            discardingSequenceStack = discardingSequenceStack.tail
+            if (inDiscardingSequence) discardingSequenceStack = discardingSequenceStack.tail
             if (discarding || inDiscardingSequence) Nil else sequenceDelimitation :: Nil
 
           case valueChunk: DicomValueChunk =>
