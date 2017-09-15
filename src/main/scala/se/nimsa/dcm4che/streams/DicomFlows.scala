@@ -550,11 +550,11 @@ object DicomFlows {
       {
         case sequence: DicomSequence if sequence.length >= 0 =>
           partStack = sequence +: subtractLength(partStack, sequence)
-          sequence.copy(length = -1, bytes = sequence.bytes.dropRight(4) ++ undeterminateBytes) :: Nil
+          sequence.copy(length = -1, bytes = sequence.bytes.dropRight(4) ++ undeterminateBytes) :: maybeDelimit()
 
         case item: DicomItem if item.length >= 0 =>
           partStack = item +: subtractLength(partStack, item)
-          item.copy(length = -1, bytes = item.bytes.dropRight(4) ++ undeterminateBytes) :: Nil
+          item.copy(length = -1, bytes = item.bytes.dropRight(4) ++ undeterminateBytes) :: maybeDelimit()
 
         case part =>
           partStack = subtractLength(partStack, part)

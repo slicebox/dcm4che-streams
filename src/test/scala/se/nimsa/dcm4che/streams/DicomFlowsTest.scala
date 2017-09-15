@@ -698,5 +698,30 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectValueChunk()
       .expectDicomComplete()
   }
+
+  it should "handle empty sequences and items" in {
+    val bytes =
+      sequence(Tag.DerivationCodeSequence, 52) ++ item(16) ++ studyDate ++ item(0) ++ item(12) ++ sequence(Tag.DerivationCodeSequence, 0)
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(sequenceLengthFilter)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence, -1)
+      .expectItem(1, -1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectItem(2, -1)
+      .expectItemDelimitation()
+      .expectItem(3, -1)
+      .expectSequence(Tag.DerivationCodeSequence, -1)
+      .expectSequenceDelimitation()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
 }
 
