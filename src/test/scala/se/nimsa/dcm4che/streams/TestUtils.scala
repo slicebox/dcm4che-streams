@@ -56,21 +56,21 @@ object TestUtils {
     def expectItem(index: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case item: DicomItem if item.index == index => true
+        case item: DicomSequenceItem if item.index == index => true
         case p => throw new RuntimeException(s"Expected DicomItem with index = $index, got $p")
       }
 
     def expectItem(index: Int, length: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case item: DicomItem if item.index == index && item.length == length => true
+        case item: DicomSequenceItem if item.index == index && item.length == length => true
         case p => throw new RuntimeException(s"Expected DicomItem with index = $index and length $length, got $p")
       }
 
     def expectItemDelimitation(): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case _: DicomItemDelimitation => true
+        case _: DicomSequenceItemDelimitation => true
         case p => throw new RuntimeException(s"Expected DicomItemDelimitation, got $p")
       }
 
@@ -84,7 +84,7 @@ object TestUtils {
     def expectFragment(index: Int, length: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case item: DicomFragment if item.index == index && item.length == length => true
+        case item: DicomFragmentItem if item.index == index && item.length == length => true
         case p => throw new RuntimeException(s"Expected DicomFragment with index = $index and length $length, got $p")
       }
 
@@ -154,7 +154,7 @@ object TestUtils {
     def expectFragmentData(length: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case fragmentData: DicomFragmentData if fragmentData.bytes.length == length => true
+        case fragmentData: DicomFragment if fragmentData.bytes.length == length => true
         case p => throw new RuntimeException(s"Expected DicomFragment with length = $length, got $p")
       }
 

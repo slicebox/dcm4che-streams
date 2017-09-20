@@ -27,11 +27,19 @@ object DicomParts {
     def bytes: ByteString
   }
 
+  trait TagPart extends DicomPart {
+    def tag: Int
+  }
+
+  trait LengthPart extends DicomPart {
+    def length: Long
+  }
+
   case class DicomPreamble(bytes: ByteString) extends DicomPart {
     def bigEndian = false
   }
 
-  case class DicomHeader(tag: Int, vr: VR, length: Long, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomHeader(tag: Int, vr: VR, length: Long, isFmi: Boolean, bigEndian: Boolean, explicitVR: Boolean, bytes: ByteString) extends DicomPart with TagPart with LengthPart {
 
     def withUpdatedLength(newLength: Long): DicomHeader = {
 
@@ -75,23 +83,29 @@ object DicomParts {
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+  trait DicomItem extends DicomPart {
+    def index: Int
+    def length: Long
   }
 
-  case class DicomFragment(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
-    override def toString = s"DicomFragment index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+  case class DicomSequenceItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomItem {
+    def explicitLength: Boolean = length >= 0
+    override def toString = s"DicomSequenceItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
-  case class DicomItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
+  case class DicomFragmentItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomItem {
+    override def toString = s"DicomFragmentItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+  }
 
-  case class DicomSequence(tag: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomSequenceItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart
+
+  case class DicomSequence(tag: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomPart with TagPart with LengthPart {
     override def toString = s"DicomSequence ${tagToString(tag)} length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   case class DicomSequenceDelimitation(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomFragments(tag: Int, length: Long, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart {
+  case class DicomFragments(tag: Int, length: Long, vr: VR, bigEndian: Boolean, bytes: ByteString) extends DicomPart with TagPart with LengthPart {
     override def toString = s"DicomFragments ${tagToString(tag)} $vr ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
@@ -99,11 +113,13 @@ object DicomParts {
 
   case class DicomUnknownPart(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  case class DicomFragmentData(bigEndian: Boolean, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
+  case class DicomFragment(bigEndian: Boolean, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
     def bytes: ByteString = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
   }
 
-  case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart {
+  case class DicomAttribute(header: DicomHeader, valueChunks: Seq[DicomValueChunk]) extends DicomPart with TagPart with LengthPart {
+    override val tag: Int = header.tag
+    override val length: Long = header.length
     def valueBytes: ByteString = valueChunks.map(_.bytes).fold(ByteString.empty)(_ ++ _)
     def bytes: ByteString = header.bytes ++ valueBytes
     def bigEndian: Boolean = header.bigEndian

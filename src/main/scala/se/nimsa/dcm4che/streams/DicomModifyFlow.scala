@@ -149,11 +149,11 @@ object DicomModifyFlow {
             tagPathSequence = tagPathSequence.flatMap(_.previous)
             fragmentsDelimitation :: Nil
 
-          case item: DicomItem =>
+          case item: DicomSequenceItem =>
             tagPathSequence = tagPathSequence.flatMap(s => s.previous.map(_.thenSequence(s.tag, item.index)).orElse(Some(TagPath.fromSequence(s.tag, item.index))))
             item :: Nil
 
-          case itemDelimitation: DicomItemDelimitation =>
+          case itemDelimitation: DicomSequenceItemDelimitation =>
             itemDelimitation :: Nil
 
           case DicomEndMarker =>

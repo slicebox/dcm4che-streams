@@ -140,8 +140,8 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
               InDatasetHeader(state, inflater)
           case DicomFragments(_, _, _, bigEndian, _) => InFragments(FragmentsState(fragmentIndex = 0, bigEndian, state.explicitVR), inflater)
           case DicomSequence(_, _, _, _) => InDatasetHeader(state.copy(itemIndex = 0), inflater)
-          case DicomItem(index, _, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
-          case DicomItemDelimitation(index, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
+          case DicomSequenceItem(index, _, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
+          case DicomSequenceItemDelimitation(index, _, _) => InDatasetHeader(state.copy(itemIndex = index), inflater)
           case _ => InDatasetHeader(state, inflater)
         }.getOrElse(FinishedParser)
         ParseResult(part, nextState, acceptUpstreamFinish = !nextState.isInstanceOf[InValue])
@@ -183,7 +183,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
               else
                 this.copy(state = state.copy(fragmentIndex = state.fragmentIndex + 1))
             ParseResult(
-              Some(DicomFragment(state.fragmentIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
+              Some(DicomFragmentItem(state.fragmentIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
               nextState
             )
 
@@ -273,8 +273,8 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
           Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else
         tag match {
-          case 0xFFFEE000 => Some(DicomItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(8)))
-          case 0xFFFEE00D => Some(DicomItemDelimitation(state.itemIndex, state.bigEndian, reader.take(8)))
+          case 0xFFFEE000 => Some(DicomSequenceItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(8)))
+          case 0xFFFEE00D => Some(DicomSequenceItemDelimitation(state.itemIndex, state.bigEndian, reader.take(8)))
           case 0xFFFEE0DD => Some(DicomSequenceDelimitation(state.bigEndian, reader.take(8)))
           case _ => Some(DicomUnknownPart(state.bigEndian, reader.take(headerLength))) // cannot happen
         }

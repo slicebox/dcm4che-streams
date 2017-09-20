@@ -24,6 +24,7 @@ import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
+import se.nimsa.dcm4che.streams.TagPath.{TagPathSequence, TagPathTag}
 
 /**
   * Various flows for transforming streams of <code>DicomPart</code>s.
@@ -54,7 +55,7 @@ object DicomFlows {
       () =>
         var currentData: Option[DicomAttribute] = None
         var inFragments = false
-        var currentFragment: Option[DicomFragmentData] = None
+        var currentFragment: Option[DicomFragment] = None
 
       {
         case header: DicomHeader =>
@@ -67,8 +68,8 @@ object DicomFlows {
           currentFragment = None
           inFragments = false
           endFragments :: Nil
-        case fragment: DicomFragment =>
-          currentFragment = Some(DicomFragmentData(fragment.bigEndian, Seq.empty))
+        case fragment: DicomFragmentItem =>
+          currentFragment = Some(DicomFragment(fragment.bigEndian, Seq.empty))
           if (fragment.length <= 0) currentFragment.get :: Nil else Nil
         case valueChunk: DicomValueChunk if inFragments =>
           currentFragment = currentFragment.map(f => f.copy(valueChunks = f.valueChunks :+ valueChunk))
@@ -85,16 +86,19 @@ object DicomFlows {
 
   /**
     * Filter a stream of dicom parts such that all attributes except those with tags in the white list are discarded.
+    * Only attributes in the root dataset are considered. Preamble is discarded.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
     * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains _)
+  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
+    tagFilter(tagPath => !(tagPath.isRoot && tagsWhitelist.contains(tagPath.tag)), keepPreamble = false)
 
   /**
-    * Filter a stream of dicom parts such that attributes with tags in the black list are discarded.
+    * Filter a stream of dicom parts such that attributes with tags in the black list are discarded. Tags in the blacklist
+    * are removed in the root dataset as well as any sequences.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
@@ -102,7 +106,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def blacklistFilter(tagsBlacklist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter(tagsBlacklist.contains _)
+    tagFilter(tagPath => tagsBlacklist.contains(tagPath.tag), keepPreamble = true)
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
@@ -114,7 +118,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter((tag: Int) => DicomParsing.isGroupLength(tag) && !DicomParsing.isFileMetaInformation(tag))
+    tagFilter(tagPath => DicomParsing.isGroupLength(tagPath.tag) && !DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true)
 
   /**
     * Discards the file meta information.
@@ -122,92 +126,94 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter(DicomParsing.isFileMetaInformation, keepPreamble = false)
+    tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = false)
+
 
   /**
-    * Blacklist filter for DICOM parts.
+    * Filter a stream of dicom parts leaving only those for which the supplied tag condition is `true`. As the stream of
+    * dicom parts is flowing, a `TagPath` state is updated. For each such update, the tag condition is evaluated. If it
+    * renders `false`, parts are discarded until it renders `true` again.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
-    * @param tagCondition blacklist tag condition
-    * @param keepPreamble true if preamble should be kept, else false
-    * @return Flow of filtered parts
+    * @param tagCondition function that determines if dicom parts should be discarded based on the current tag path
+    * @param keepPreamble determines whether the preamble - if present - should be discarded or not
+    * @return the filtered flow
     */
-  def blacklistFilter(tagCondition: Int => Boolean, keepPreamble: Boolean = true): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagCondition, isWhitelist = false, keepPreamble)
-
-  /**
-    * Tag based whitelist filter for DICOM parts.
-    *
-    * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
-    *
-    * @param tagCondition whitelist condition
-    * @param keepPreamble true if preamble should be kept, else false
-    * @return Flow of filtered parts
-    */
-  def whitelistFilter(tagCondition: Int => Boolean, keepPreamble: Boolean = false): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagCondition, isWhitelist = true, keepPreamble)
-
-
-  private def tagFilter(tagCondition: Int => Boolean, isWhitelist: Boolean, keepPreamble: Boolean): Flow[DicomPart, DicomPart, NotUsed] =
+  def tagFilter(tagCondition: TagPath => Boolean, keepPreamble: Boolean): Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .statefulMapConcat {
 
-        def shouldDiscard(tag: Int, isWhitelist: Boolean) = {
-          if (isWhitelist) {
-            !tagCondition(tag) // Whitelist: condition true => keep
-          } else {
-            tagCondition(tag) // Blacklist: condition true => discard
-          }
-        }
+        def shouldDiscard(tagPath: Option[TagPath]) = tagPath.forall(tagCondition)
 
         () =>
-          var discarding = isWhitelist
-          var discardingSequenceStack: List[DicomSequence] = Nil
-          def inDiscardingSequence = discardingSequenceStack.nonEmpty
+          var tagPath: Option[_ <: TagPath] = None
+          var discarding = false
+
+          def updateDiscardingAndEmit(part: DicomPart): List[DicomPart] = {
+            discarding = shouldDiscard(tagPath)
+            if (discarding) Nil else part :: Nil
+          }
 
         {
           case dicomPreamble: DicomPreamble =>
             if (keepPreamble) dicomPreamble :: Nil else Nil
 
           case sequence: DicomSequence =>
-            if (discarding || inDiscardingSequence || shouldDiscard(sequence.tag, isWhitelist)) {
-              discardingSequenceStack = sequence +: discardingSequenceStack
-              Nil
-            } else sequence :: Nil
+            tagPath = tagPath.map {
+              case t: TagPathTag => t.previous.map(_.thenSequence(sequence.tag)).getOrElse(TagPath.fromSequence(sequence.tag))
+              case s: TagPathSequence => s.thenSequence(sequence.tag)
+            }.orElse(Some(TagPath.fromSequence(sequence.tag)))
+            updateDiscardingAndEmit(sequence)
+
+          case item: DicomItem =>
+            tagPath = tagPath.map {
+              case t: TagPathTag => t.previous
+                .map(s => s.previous.map(_.thenSequence(s.tag, item.index)).getOrElse(TagPath.fromSequence(s.tag, item.index)))
+                .getOrElse(t)
+              case s: TagPathSequence => s.previous
+                .map(_.thenSequence(s.tag, item.index))
+                .getOrElse(TagPath.fromSequence(s.tag, item.index))
+            }
+            updateDiscardingAndEmit(item)
 
           case sequenceDelimitation: DicomSequenceDelimitation =>
-            if (inDiscardingSequence) discardingSequenceStack = discardingSequenceStack.tail
-            if (discarding || inDiscardingSequence) Nil else sequenceDelimitation :: Nil
+            tagPath = tagPath.flatMap {
+              case t: TagPathTag => t.previous.flatMap(_.previous)
+              case s: TagPathSequence => s.previous
+            }
+            if (discarding) Nil else sequenceDelimitation :: Nil
 
-          case valueChunk: DicomValueChunk =>
-            if (discarding || inDiscardingSequence) {
-              if (valueChunk.last)
-                discarding = isWhitelist
-              Nil
-            } else valueChunk :: Nil
+          case fragments: DicomFragments =>
+            tagPath = tagPath.map {
+              case t: TagPathTag => t.previous.map(_.thenTag(fragments.tag)).getOrElse(TagPath.fromTag(fragments.tag))
+              case s: TagPathSequence => s.thenTag(fragments.tag)
+            }.orElse(Some(TagPath.fromTag(fragments.tag)))
+            updateDiscardingAndEmit(fragments)
+
+          case fragmentsDelimitation: DicomFragmentsDelimitation =>
+            tagPath = tagPath.flatMap {
+              case t: TagPathTag => t.previous.flatMap(_.previous)
+              case s: TagPathSequence => s.previous
+            }
+            if (discarding) Nil else fragmentsDelimitation :: Nil
 
           case header: DicomHeader =>
-            discarding = shouldDiscard(header.tag, isWhitelist)
-            if (discarding || inDiscardingSequence) {
-              if (header.length <= 0)
-                discarding = isWhitelist
-              Nil
-            } else header :: Nil
+            tagPath = tagPath.map {
+              case t: TagPathTag => t.previous.map(_.thenTag(header.tag)).getOrElse(TagPath.fromTag(header.tag))
+              case s: TagPathSequence => s.thenTag(header.tag)
+            }.orElse(Some(TagPath.fromTag(header.tag)))
+            updateDiscardingAndEmit(header)
 
-          case dicomFragments: DicomFragments =>
-            discarding = shouldDiscard(dicomFragments.tag, isWhitelist)
-            if (discarding || inDiscardingSequence) Nil else dicomFragments :: Nil
-
-          case dicomAttribute: DicomAttribute =>
-            discarding = shouldDiscard(dicomAttribute.header.tag, isWhitelist)
-            if (discarding || inDiscardingSequence) {
-              discarding = isWhitelist
-              Nil
-            } else dicomAttribute :: Nil
+          case attribute: DicomAttribute =>
+            tagPath = tagPath.map {
+              case t: TagPathTag => t.previous.map(_.thenTag(attribute.header.tag)).getOrElse(TagPath.fromTag(attribute.header.tag))
+              case s: TagPathSequence => s.thenTag(attribute.header.tag)
+            }.orElse(Some(TagPath.fromTag(attribute.header.tag)))
+            updateDiscardingAndEmit(attribute)
 
           case part: DicomPart =>
-            if (discarding || inDiscardingSequence) Nil else part :: Nil
+            if (discarding) Nil else part :: Nil
         }
       }
 
@@ -470,7 +476,7 @@ object DicomFlows {
   val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
     .concat(Source.single(DicomEndMarker))
     .via(collectAttributesFlow(DicomParsing.isFileMetaInformation, (tag: Int) => !DicomParsing.isFileMetaInformation(tag), 1000000))
-    .via(blacklistFilter(DicomParsing.isFileMetaInformation _))
+    .via(tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true))
     .statefulMapConcat {
 
       () =>
@@ -521,7 +527,7 @@ object DicomFlows {
       val undeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
       val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
       def subtractLength(seqsAndItems: List[DicomPart], part: DicomPart) = seqsAndItems.map {
-        case item: DicomItem => item.copy(length = item.length - part.bytes.length)
+        case item: DicomSequenceItem => item.copy(length = item.length - part.bytes.length)
         case sequence: DicomSequence => sequence.copy(length = sequence.length - part.bytes.length)
       }
 
@@ -531,17 +537,17 @@ object DicomFlows {
         def maybeDelimit(): List[DicomPart] = {
           val delimits = partStack
             .filter { // find items and sequences that have ended
-              case item: DicomItem => item.length <= 0
+              case item: DicomSequenceItem => item.length <= 0
               case sequence: DicomSequence => sequence.length <= 0
             }
             .map { // create delimiters for those
-              case item: DicomItem =>
-                DicomItemDelimitation(item.index, item.bigEndian, tagToBytes(0xFFFEE00D, item.bigEndian) ++ zeroBytes)
+              case item: DicomSequenceItem =>
+                DicomSequenceItemDelimitation(item.index, item.bigEndian, tagToBytes(0xFFFEE00D, item.bigEndian) ++ zeroBytes)
               case sequence: DicomSequence =>
                 DicomSequenceDelimitation(sequence.bigEndian, tagToBytes(0xFFFEE0DD, sequence.bigEndian) ++ zeroBytes)
             }
           partStack = partStack.filter { // only keep items and sequences with bytes left to subtract
-            case item: DicomItem => item.length > 0
+            case item: DicomSequenceItem => item.length > 0
             case sequence: DicomSequence => sequence.length > 0
           }
           delimits // these will be returned and inserted in stream
@@ -552,7 +558,7 @@ object DicomFlows {
           partStack = sequence +: subtractLength(partStack, sequence)
           sequence.copy(length = -1, bytes = sequence.bytes.dropRight(4) ++ undeterminateBytes) :: maybeDelimit()
 
-        case item: DicomItem if item.length >= 0 =>
+        case item: DicomSequenceItem if item.length >= 0 =>
           partStack = item +: subtractLength(partStack, item)
           item.copy(length = -1, bytes = item.bytes.dropRight(4) ++ undeterminateBytes) :: maybeDelimit()
 

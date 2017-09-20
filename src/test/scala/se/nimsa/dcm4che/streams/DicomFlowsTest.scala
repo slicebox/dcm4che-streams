@@ -206,7 +206,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), keepPreamble = false))
+      .via(tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -218,7 +218,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
       .via(new DicomPartFlow())
-      .via(blacklistFilter((tag: Int) => DicomParsing.isFileMetaInformation(tag), keepPreamble = false))
+      .via(tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.SpecificCharacterSet)
@@ -231,7 +231,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
       .via(new DicomPartFlow())
-      .via(blacklistFilter(DicomParsing.isPrivateAttribute _))
+      .via(tagFilter(tagPath => DicomParsing.isPrivateAttribute(tagPath.tag), keepPreamble = true))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -247,7 +247,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter((tag: Int) => groupNumber(tag) >= 8))
+      .via(tagFilter(tagPath => groupNumber(tagPath.tag) < 8, keepPreamble = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -261,7 +261,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
     val source = FileIO.fromPath(file.toPath)
       .via(partFlow)
-      .via(whitelistFilter(_ == Tag.PatientName))
+      .via(tagFilter(tagPath => tagPath.tag != Tag.PatientName, keepPreamble = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
