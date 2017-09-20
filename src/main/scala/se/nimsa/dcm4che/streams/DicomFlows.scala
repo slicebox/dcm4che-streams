@@ -94,7 +94,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagPath => !(tagPath.isRoot && tagsWhitelist.contains(tagPath.tag)), keepPreamble = false)
+    tagFilter(tagPath => tagPath.isRoot && tagsWhitelist.contains(tagPath.tag), keepPreamble = false)
 
   /**
     * Filter a stream of dicom parts such that attributes with tags in the black list are discarded. Tags in the blacklist
@@ -106,7 +106,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def blacklistFilter(tagsBlacklist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagPath => tagsBlacklist.contains(tagPath.tag), keepPreamble = true)
+    tagFilter(tagPath => !tagsBlacklist.contains(tagPath.tag), keepPreamble = true)
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
@@ -118,7 +118,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagPath => DicomParsing.isGroupLength(tagPath.tag) && !DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true)
+    tagFilter(tagPath => !DicomParsing.isGroupLength(tagPath.tag) || DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true)
 
   /**
     * Discards the file meta information.
@@ -126,7 +126,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = false)
+    tagFilter(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = false)
 
 
   /**
@@ -144,7 +144,7 @@ object DicomFlows {
     Flow[DicomPart]
       .statefulMapConcat {
 
-        def shouldDiscard(tagPath: Option[TagPath]) = tagPath.forall(tagCondition)
+        def shouldDiscard(tagPath: Option[TagPath]) = !tagPath.exists(tagCondition)
 
         () =>
           var tagPath: Option[_ <: TagPath] = None
@@ -476,7 +476,7 @@ object DicomFlows {
   val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
     .concat(Source.single(DicomEndMarker))
     .via(collectAttributesFlow(DicomParsing.isFileMetaInformation, (tag: Int) => !DicomParsing.isFileMetaInformation(tag), 1000000))
-    .via(tagFilter(tagPath => DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true))
+    .via(tagFilter(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), keepPreamble = true))
     .statefulMapConcat {
 
       () =>
