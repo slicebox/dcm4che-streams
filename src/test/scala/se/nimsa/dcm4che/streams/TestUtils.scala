@@ -84,7 +84,7 @@ object TestUtils {
     def expectFragment(index: Int, length: Int): PartProbe = probe
       .request(1)
       .expectNextChainingPF {
-        case item: DicomFragmentItem if item.index == index && item.length == length => true
+        case item: DicomFragmentsItem if item.index == index && item.length == length => true
         case p => throw new RuntimeException(s"Expected DicomFragment with index = $index and length $length, got $p")
       }
 

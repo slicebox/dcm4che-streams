@@ -183,7 +183,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
               else
                 this.copy(state = state.copy(fragmentIndex = state.fragmentIndex + 1))
             ParseResult(
-              Some(DicomFragmentItem(state.fragmentIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
+              Some(DicomFragmentsItem(state.fragmentIndex + 1, valueLength, state.bigEndian, reader.take(headerLength))),
               nextState
             )
 
