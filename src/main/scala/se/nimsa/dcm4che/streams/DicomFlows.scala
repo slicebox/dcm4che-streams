@@ -93,20 +93,21 @@ object DicomFlows {
     * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(_ => false)(tagPath => tagPath.isRoot && tagsWhitelist.contains(tagPath.tag))
+  def whitelistFilter(tagsWhitelist: Set[Int]): Flow[DicomPart, DicomPart, NotUsed] =
+    tagFilter(_ => false)(currentPath => currentPath.isRoot && tagsWhitelist.contains(currentPath.tag))
 
   /**
-    * Filter a stream of dicom parts such that attributes with tags in the black list are discarded. Tags in the blacklist
-    * are removed in the root dataset as well as any sequences.
+    * Filter a stream of dicom parts such that attributes with tag paths in the black list are discarded. Tag paths in
+    * the blacklist are removed in the root dataset as well as any sequences, and entire sequences or items in sequences
+    * can be removed.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
-    * @param tagsBlacklist list of tags to discard.
+    * @param blacklistPaths list of tag paths to discard.
     * @return the associated filter Flow
     */
-  def blacklistFilter(tagsBlacklist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(_ => true)(tagPath => !tagsBlacklist.contains(tagPath.tag))
+  def blacklistFilter(blacklistPaths: Set[TagPath]): Flow[DicomPart, DicomPart, NotUsed] =
+    tagFilter(_ => true)(currentPath => !blacklistPaths.exists(currentPath.startsWithSuperPath))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
@@ -134,10 +135,12 @@ object DicomFlows {
     * dicom parts is flowing, a `TagPath` state is updated. For each such update, the tag condition is evaluated. If it
     * renders `false`, parts are discarded until it renders `true` again.
     *
-    * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
+    * Note that it is up to the user of this function to make sure the modified DICOM data is valid. When filtering
+    * items from a sequence, item indices are preserved (i.e. not updated).
     *
     * @param tagCondition     function that determines if dicom parts should be discarded based on the current tag path
-    * @param defaultCondition determines whether the preamble - if present - should be discarded or not
+    * @param defaultCondition determines whether to keep or discard elements with no tag path such as the preamble and
+    *                         synthetic dicom parts inserted to hold state.
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
@@ -196,7 +199,6 @@ object DicomFlows {
               case t: TagPathTag => t.previous.map(s => s.previous.map(_.thenSequence(s.tag)).getOrElse(TagPath.fromSequence(s.tag)))
               case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag)).orElse(Some(TagPath.fromSequence(s.tag)))
             }
-            updateKeeping(itemDelimitation)
             maybeEmit(itemDelimitation)
 
           case sequenceDelimitation: DicomSequenceDelimitation =>

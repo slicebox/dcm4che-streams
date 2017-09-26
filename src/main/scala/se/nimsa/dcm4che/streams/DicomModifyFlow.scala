@@ -14,11 +14,12 @@ object DicomModifyFlow {
     *
     * @param tagPath      tag path
     * @param matches      function used to determine if another tag path is matching the tag path of this modification
-    *                     (may mean e.g. equals, contains or ends with)
+    *                     (may mean e.g. equals, starts with or ends with)
     * @param modification a modification function
     * @param insert       if tag is absent in dataset it will be created and inserted when `true`
     */
   case class TagModification(tagPath: TagPathTag, matches: TagPath => Boolean, modification: ByteString => ByteString, insert: Boolean)
+
   object TagModification {
 
     /**
@@ -28,7 +29,7 @@ object DicomModifyFlow {
       * specific attributes in a dataset.
       */
     def contains(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
-      TagModification(tagPath, tagPath.contains, modification, insert)
+      TagModification(tagPath, tagPath.isSuperPathOf, modification, insert)
 
     /**
       * Modification that will modify dataset elements where the corresponding tag path ends with the tag path of this
@@ -63,11 +64,11 @@ object DicomModifyFlow {
           val sortedModifications = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 
           var currentModification: Option[TagModification] = None // current modification
-          var currentHeader: Option[DicomHeader] = None // header of current attribute being modified
-          var currentTagPath: Option[TagPath] = None
+        var currentHeader: Option[DicomHeader] = None // header of current attribute being modified
+        var currentTagPath: Option[TagPath] = None
           var value = ByteString.empty // value of current attribute being modified
-          var bigEndian = false // endinaness of current attribute
-          var explicitVR = true // VR representation of current attribute
+        var bigEndian = false // endinaness of current attribute
+        var explicitVR = true // VR representation of current attribute
 
           var tagPathSequence: Option[TagPathSequence] = None // current sequence path. None = currently in root dataset
 
@@ -91,7 +92,7 @@ object DicomModifyFlow {
             tagToTest < upperTag && lowerTagMaybe.forall(_ < tagToTest)
 
           def isInDataset(tagToTest: TagPath, sequenceMaybe: Option[TagPathSequence]) =
-            sequenceMaybe.map(tagToTest.contains).getOrElse(tagToTest.isRoot)
+            sequenceMaybe.map(tagToTest.startsWithSubPath).getOrElse(tagToTest.isRoot)
 
         {
           case header: DicomHeader =>

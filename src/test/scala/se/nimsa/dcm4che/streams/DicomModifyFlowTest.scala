@@ -141,6 +141,8 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   it should "insert attributes in sequences if sequence is present but attribute is not present" in {
     val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
+    println()
+
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
       .via(modifyFlow(

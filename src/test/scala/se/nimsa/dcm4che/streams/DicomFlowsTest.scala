@@ -97,7 +97,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Set(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -110,7 +110,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Set(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -123,7 +123,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter(Seq(Tag.StudyDate)))
+      .via(whitelistFilter(Set(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomComplete()
@@ -134,7 +134,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(whitelistFilter(Seq.empty))
+      .via(whitelistFilter(Set.empty))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomComplete()
@@ -226,6 +226,42 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) wit
       .expectHeader(Tag.ImageType)
   }
 
+  it should "block the entire sequence when a sequence tag is on the black list" in {
+    val bytes = studyDate ++
+      (sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++
+        (sequence(Tag.AbstractPriorCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd) ++
+        itemEnd ++ sequenceEnd) ++
+      patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(blacklistFilter(Set(TagPath.fromSequence(Tag.DerivationCodeSequence))))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "block a single item inside a sequence" in {
+    val bytes = studyDate ++
+      sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ item ++ studyDate ++ itemEnd ++ sequenceEnd
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(blacklistFilter(Set(TagPath.fromTag(Tag.StudyDate), TagPath.fromSequence(Tag.DerivationCodeSequence, 1))))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(2)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
 
   it should "filter leave the dicom file unchanged when blacklist condition does not match any attribute" in {
     val file = new File(getClass.getResource("CT0055.dcm").toURI)
