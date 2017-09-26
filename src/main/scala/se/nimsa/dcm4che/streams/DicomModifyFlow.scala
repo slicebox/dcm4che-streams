@@ -92,7 +92,7 @@ object DicomModifyFlow {
             tagToTest < upperTag && lowerTagMaybe.forall(_ < tagToTest)
 
           def isInDataset(tagToTest: TagPath, sequenceMaybe: Option[TagPathSequence]) =
-            sequenceMaybe.map(tagToTest.startsWithSubPath).getOrElse(tagToTest.isRoot)
+            sequenceMaybe.map(tagToTest.startsWithSuperPathOf).getOrElse(tagToTest.isRoot)
 
         {
           case header: DicomHeader =>
