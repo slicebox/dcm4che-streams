@@ -89,31 +89,6 @@ sealed trait TagPath {
   }
 
   /**
-    * A sub-path of another path is a path of equal length with the same sequence of tag numbers. Differences are in the
-    * specification of items. A path with a more restrictive specification of items (item index instead of wildcard/all
-    * items) is said to be a sub-path of the more general path.
-    *
-    * The input path is a sub-path of this path if and only if this path is a super-path of the input path.
-    *
-    * @param that tag path to test
-    * @return `true` if the input tag path is a sub-path of this path
-    * @example (0008,9215)[1].(0010,0010) is a sub-path of (0008,9215)[1].(0010,0010)
-    * @example (0008,9215)[1].(0010,0010) is a sub-path of (0008,9215)[*].(0010,0010)
-    * @example (0008,9215)[*].(0010,0010) is not a sub-path of (0008,9215)[1].(0010,0010) (it is a super-path)
-    */
-  def isSubPathOf(that: TagPath): Boolean = {
-    def tagEquals(t1: TagPath, t2: TagPath) = t1.tag == t2.tag &&
-      (t1.previous.isEmpty && t2.previous.isEmpty || t1.previous.flatMap(p => t2.previous.map(p.isSubPathOf)).getOrElse(false))
-    (this, that) match {
-      case (t1: TagPathTag, t2: TagPathTag) => tagEquals(t1, t2)
-      case (s1: TagPathSequenceItem, s2: TagPathSequenceItem) => s1.item == s2.item && tagEquals(s1, s2)
-      case (s1: TagPathSequenceItem, s2: TagPathSequenceAny) => tagEquals(s1, s2)
-      case (s1: TagPathSequenceAny, s2: TagPathSequenceAny) => tagEquals(s1, s2)
-      case _ => false
-    }
-  }
-
-  /**
     * A super-path of another path is a path of equal length with the same sequence of tag numbers. Differences are in the
     * specification of items. A path with a less restrictive specification of items (wildcard/all
     * items instead of item index) is said to be a super-path of the more general path.
@@ -126,7 +101,32 @@ sealed trait TagPath {
     * @example (0008,9215)[*].(0010,0010) is a super-path of (0008,9215)[1].(0010,0010)
     * @example (0008,9215)[1].(0010,0010) is not a super-path of (0008,9215)[*].(0010,0010) (it is a sub-path)
     */
-  def isSuperPathOf(that: TagPath): Boolean = that.isSubPathOf(this)
+  def hasSuperPath(that: TagPath): Boolean = {
+    def tagEquals(t1: TagPath, t2: TagPath) = t1.tag == t2.tag &&
+      (t1.previous.isEmpty && t2.previous.isEmpty || t1.previous.flatMap(p => t2.previous.map(p.hasSuperPath)).getOrElse(false))
+    (this, that) match {
+      case (t1: TagPathTag, t2: TagPathTag) => tagEquals(t1, t2)
+      case (s1: TagPathSequenceItem, s2: TagPathSequenceItem) => s1.item == s2.item && tagEquals(s1, s2)
+      case (s1: TagPathSequenceItem, s2: TagPathSequenceAny) => tagEquals(s1, s2)
+      case (s1: TagPathSequenceAny, s2: TagPathSequenceAny) => tagEquals(s1, s2)
+      case _ => false
+    }
+  }
+
+  /**
+    * A sub-path of another path is a path of equal length with the same sequence of tag numbers. Differences are in the
+    * specification of items. A path with a more restrictive specification of items (item index instead of wildcard/all
+    * items) is said to be a sub-path of the more general path.
+    *
+    * The input path is a sub-path of this path if and only if this path is a super-path of the input path.
+    *
+    * @param that tag path to test
+    * @return `true` if the input tag path is a sub-path of this path
+    * @example (0008,9215)[1].(0010,0010) is a sub-path of (0008,9215)[1].(0010,0010)
+    * @example (0008,9215)[1].(0010,0010) is a sub-path of (0008,9215)[*].(0010,0010)
+    * @example (0008,9215)[*].(0010,0010) is not a sub-path of (0008,9215)[1].(0010,0010) (it is a super-path)
+    */
+  def hasSubPath(that: TagPath): Boolean = that.hasSuperPath(this)
 
   private[TagPath] def startsWith(that: TagPath,
                                   f1: (TagPathSequenceItem, TagPathSequenceAny) => Boolean,
@@ -147,27 +147,25 @@ sealed trait TagPath {
     * Tests if the n first nodes of this path is equal (see definition of `equels`) to the input path of depth n
     *
     * @param that tag path to test
-    * @return `true` if the input tag path (of depth n) is equal to the first n elements of this tag path
+    * @return `true` if the input tag path is equal to the the start of this tag path
     */
   def startsWith(that: TagPath): Boolean = startsWith(that, (_, _) => false, (_, _) => false)
 
   /**
-    * Tests if the n first nodes of this path is a super-path (see definition of `isSuperPathOf`) to the input path of depth n
+    * Tests if the input path of depth n is a sub-path (see definition of `hasSubPath`) of the n first nodes of this path
     *
-    * @param subPath tag path to test
-    * @return `true` if the input tag path (of depth n) is a sub-path of (equal to or contained in) the first n elements
-    *         of this tag path
+    * @param that tag path to test
+    * @return `true` if the input tag path is a sub-path of the start of this tag path
     */
-  def startsWithSuperPathOf(subPath: TagPath): Boolean = startsWith(subPath, (_, _) => false, (s1, s2) => s1.tag == s2.tag)
+  def startsWithSubPath(that: TagPath): Boolean = startsWith(that, (_, _) => false, (s1, s2) => s1.tag == s2.tag)
 
   /**
-    * Tests if the n first nodes of this path is a sub-path (see `isSubPathOf`) to the input path of depth n
+    * Tests if the input path of depth n is a super-path (see definition of `hasSuperPath`) of the n first nodes of this path
     *
-    * @param superPath tag path to test
-    * @return `true` if the input tag path (of depth n) is a super-path of (equal to or a superset of) the first n elements
-    *         of this tag path
+    * @param that tag path to test
+    * @return `true` if the input tag path is a super-path of the start of this tag path
     */
-  def startsWithSubPathOf(superPath: TagPath): Boolean = startsWith(superPath, (s1, s2) => s1.tag == s2.tag, (_, _) => false)
+  def startsWithSuperPath(that: TagPath): Boolean = startsWith(that, (s1, s2) => s1.tag == s2.tag, (_, _) => false)
 
   private[TagPath] def endsWith(that: TagPath,
                                 f1: (TagPathSequenceItem, TagPathSequenceAny) => Boolean,
@@ -193,25 +191,25 @@ sealed trait TagPath {
     * Tests if the n last nodes of this path is equal (see definition of `equels`) to the input path of depth n
     *
     * @param that tag path to test
-    * @return `true` if the input tag path (of depth n) is equal to the last n elements of this tag path
+    * @return `true` if the input tag path is equal to the end of this tag path
     */
   def endsWith(that: TagPath): Boolean = endsWith(that, (_, _) => false, (_, _) => false)
 
   /**
-    * Tests if the n last nodes of this path is a super-path (see definition of `isSuperPathOf`) to the input path of depth n
+    * Tests if the input path of depth n is a sub-path (see definition of `hasSubPath`) of the n last nodes of this path
     *
     * @param that tag path to test
-    * @return `true` if the input tag path (of depth n) is equal to the last n elements of this tag path
+    * @return `true` if the input tag path is a sub-path of the end of this tag path
     */
-  def endsWithSuperPathOf(that: TagPath): Boolean = endsWith(that, (_, _) => false, (s1, s2) => s1.tag == s2.tag)
+  def endsWithSubPath(that: TagPath): Boolean = endsWith(that, (_, _) => false, (s1, s2) => s1.tag == s2.tag)
 
   /**
-    * Tests if the n last nodes of this path is a sub-path (see `isSubPathOf`) to the input path of depth n
+    * Tests if the input path of depth n is a super-path (see definition of `hasSuperPath`) of the n last nodes of this path
     *
     * @param that tag path to test
-    * @return `true` if the input tag path (of depth n) is equal to the last n elements of this tag path
+    * @return `true` if the input tag path is a super-path of the end of this tag path
     */
-  def endsWithSubPathOf(that: TagPath): Boolean = endsWith(that, (s1, s2) => s1.tag == s2.tag, (_, _) => false)
+  def endsWithSuperPath(that: TagPath): Boolean = endsWith(that, (s1, s2) => s1.tag == s2.tag, (_, _) => false)
 
   /**
     * Depth of this tag path. A tag path that points to a tag in a sequence in a sequence has depth 2. A tag path that

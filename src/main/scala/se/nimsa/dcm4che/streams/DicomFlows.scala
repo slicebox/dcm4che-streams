@@ -107,7 +107,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def blacklistFilter(blacklistPaths: Set[TagPath]): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(_ => true)(currentPath => !blacklistPaths.exists(currentPath.startsWithSubPathOf))
+    tagFilter(_ => true)(currentPath => !blacklistPaths.exists(currentPath.startsWithSuperPath))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except

@@ -29,7 +29,7 @@ object DicomModifyFlow {
       * specific attributes in a dataset.
       */
     def contains(tagPath: TagPathTag, modification: ByteString => ByteString, insert: Boolean) =
-      TagModification(tagPath, tagPath.isSuperPathOf, modification, insert)
+      TagModification(tagPath, tagPath.hasSubPath, modification, insert)
 
     /**
       * Modification that will modify dataset elements where the corresponding tag path ends with the tag path of this
@@ -92,7 +92,7 @@ object DicomModifyFlow {
             tagToTest < upperTag && lowerTagMaybe.forall(_ < tagToTest)
 
           def isInDataset(tagToTest: TagPath, sequenceMaybe: Option[TagPathSequence]) =
-            sequenceMaybe.map(tagToTest.startsWithSuperPathOf).getOrElse(tagToTest.isRoot)
+            sequenceMaybe.map(tagToTest.startsWithSubPath).getOrElse(tagToTest.isRoot)
 
         {
           case header: DicomHeader =>

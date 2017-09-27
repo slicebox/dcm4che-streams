@@ -167,109 +167,109 @@ class TagPathTest extends FlatSpec with Matchers {
   "The startsWithSubPath test" should "return true for equal paths" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSuperPathOf(bPath) shouldBe true
+    aPath.startsWithSubPath(bPath) shouldBe true
   }
 
   it should "return false when subject path is longer than path" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSuperPathOf(bPath) shouldBe false
+    aPath.startsWithSubPath(bPath) shouldBe false
   }
 
   it should "return true when paths involving item indices are equal" in {
     val aPath = TagPath.fromSequence(1, 4).thenSequence(2).thenSequence(3, 2).thenTag(4)
     val bPath = TagPath.fromSequence(1, 4).thenSequence(2).thenSequence(3, 2).thenTag(4)
-    aPath.startsWithSuperPathOf(bPath) shouldBe true
+    aPath.startsWithSubPath(bPath) shouldBe true
   }
 
   it should "return true when a path with wildcards starts with a path with item indices" in {
     val aPath = TagPath.fromSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(2, 4).thenSequence(3, 66).thenTag(4)
-    aPath.startsWithSuperPathOf(bPath) shouldBe true
+    aPath.startsWithSubPath(bPath) shouldBe true
   }
 
   it should "return false when a path with item indices starts with a path with wildcards" in {
     val aPath = TagPath.fromSequence(2, 4).thenSequence(3, 66).thenTag(4)
     val bPath = TagPath.fromSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSuperPathOf(bPath) shouldBe false
+    aPath.startsWithSubPath(bPath) shouldBe false
   }
 
   it should "return true when subject path is subset of path" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3)
-    aPath.startsWithSuperPathOf(bPath) shouldBe true
+    aPath.startsWithSubPath(bPath) shouldBe true
   }
 
   "The startsWithSuperPath test" should "return true for equal paths" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSubPathOf(bPath) shouldBe true
+    aPath.startsWithSuperPath(bPath) shouldBe true
   }
 
   it should "return false when subject path is longer than path" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSubPathOf(bPath) shouldBe false
+    aPath.startsWithSuperPath(bPath) shouldBe false
   }
 
   it should "return true when paths involving item indices are equal" in {
     val aPath = TagPath.fromSequence(1, 4).thenSequence(2).thenSequence(3, 2).thenTag(4)
     val bPath = TagPath.fromSequence(1, 4).thenSequence(2).thenSequence(3, 2).thenTag(4)
-    aPath.startsWithSubPathOf(bPath) shouldBe true
+    aPath.startsWithSuperPath(bPath) shouldBe true
   }
 
   it should "return false when a path with wildcards starts with a path with item indices" in {
     val aPath = TagPath.fromSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(2, 4).thenSequence(3, 66).thenTag(4)
-    aPath.startsWithSubPathOf(bPath) shouldBe false
+    aPath.startsWithSuperPath(bPath) shouldBe false
   }
 
   it should "return true when a path with item indices starts with a path with wildcards" in {
     val aPath = TagPath.fromSequence(2, 4).thenSequence(3, 66).thenTag(4)
     val bPath = TagPath.fromSequence(2).thenSequence(3).thenTag(4)
-    aPath.startsWithSubPathOf(bPath) shouldBe true
+    aPath.startsWithSuperPath(bPath) shouldBe true
   }
 
   it should "return true when subject path is subset of path" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1).thenSequence(2).thenSequence(3)
-    aPath.startsWithSubPathOf(bPath) shouldBe true
+    aPath.startsWithSuperPath(bPath) shouldBe true
   }
 
   "The super path test" should "return false for unequal length paths" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
-    aPath.isSuperPathOf(bPath) shouldBe false
+    aPath.hasSubPath(bPath) shouldBe false
   }
 
   it should "return true when subject path has items and path has wildcards" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2, 4).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
-    aPath.isSuperPathOf(bPath) shouldBe true
+    aPath.hasSubPath(bPath) shouldBe true
   }
 
   it should "return false when subject path has wildcards and path has items" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2).thenTag(4)
-    aPath.isSuperPathOf(bPath) shouldBe false
+    aPath.hasSubPath(bPath) shouldBe false
   }
 
   "The sub path test" should "return false for unequal length paths" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
-    aPath.isSubPathOf(bPath) shouldBe false
+    aPath.hasSuperPath(bPath) shouldBe false
   }
 
   it should "return false when subject path has items and path has wildcards" in {
     val aPath = TagPath.fromSequence(1).thenSequence(2, 4).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
-    aPath.isSubPathOf(bPath) shouldBe false
+    aPath.hasSuperPath(bPath) shouldBe false
   }
 
   it should "return true when subject path has wildcards and path has items" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenTag(4)
     val bPath = TagPath.fromSequence(1, 3).thenSequence(2).thenTag(4)
-    aPath.isSubPathOf(bPath) shouldBe true
+    aPath.hasSuperPath(bPath) shouldBe true
   }
 
   "The endsWith test" should "return true when a longer tag ends with a shorter" in {
@@ -306,73 +306,73 @@ class TagPathTest extends FlatSpec with Matchers {
   "The endsWithSubPath test" should "return true when a longer tag ends with a shorter" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(2)
-    aPath.endsWithSuperPathOf(bPath) shouldBe true
+    aPath.endsWithSubPath(bPath) shouldBe true
   }
 
   it should "return false when a shorter tag is compared to a longer" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(2)
-    bPath.endsWithSuperPathOf(aPath) shouldBe false
+    bPath.endsWithSubPath(aPath) shouldBe false
   }
 
   it should "return false when tag numbers do not match" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(4)
-    aPath.endsWithSuperPathOf(bPath) shouldBe false
+    aPath.endsWithSubPath(bPath) shouldBe false
   }
 
   it should "work also with deep sequences" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3, 5).thenTag(6)
     val bPath = TagPath.fromSequence(2, 4).thenSequence(3, 5).thenTag(6)
-    aPath.endsWithSuperPathOf(bPath) shouldBe true
+    aPath.endsWithSubPath(bPath) shouldBe true
   }
 
   it should "return true for a subject path with wildcards when the path has item indices" in {
     val aPath = TagPath.fromSequence(1).thenTag(2)
     val bPath = TagPath.fromSequence(1, 4).thenTag(2)
-    aPath.endsWithSuperPathOf(bPath) shouldBe true
+    aPath.endsWithSubPath(bPath) shouldBe true
   }
 
   it should "return false for a subject path with item indices when the path has wildcards" in {
     val aPath = TagPath.fromSequence(1, 4).thenTag(2)
     val bPath = TagPath.fromSequence(1).thenTag(2)
-    aPath.endsWithSuperPathOf(bPath) shouldBe false
+    aPath.endsWithSubPath(bPath) shouldBe false
   }
 
   "The endsWithSuperPath test" should "return true when a longer tag ends with a shorter" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(2)
-    aPath.endsWithSubPathOf(bPath) shouldBe true
+    aPath.endsWithSuperPath(bPath) shouldBe true
   }
 
   it should "return false when a shorter tag is compared to a longer" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(2)
-    bPath.endsWithSubPathOf(aPath) shouldBe false
+    bPath.endsWithSuperPath(aPath) shouldBe false
   }
 
   it should "return false when tag numbers do not match" in {
     val aPath = TagPath.fromSequence(1, 3).thenTag(2)
     val bPath = TagPath.fromTag(4)
-    aPath.endsWithSubPathOf(bPath) shouldBe false
+    aPath.endsWithSuperPath(bPath) shouldBe false
   }
 
   it should "work also with deep sequences" in {
     val aPath = TagPath.fromSequence(1, 3).thenSequence(2, 4).thenSequence(3, 5).thenTag(6)
     val bPath = TagPath.fromSequence(2, 4).thenSequence(3, 5).thenTag(6)
-    aPath.endsWithSubPathOf(bPath) shouldBe true
+    aPath.endsWithSuperPath(bPath) shouldBe true
   }
 
   it should "return false for a subject path with wildcards when the path has item indices" in {
     val aPath = TagPath.fromSequence(1).thenTag(2)
     val bPath = TagPath.fromSequence(1, 4).thenTag(2)
-    aPath.endsWithSubPathOf(bPath) shouldBe false
+    aPath.endsWithSuperPath(bPath) shouldBe false
   }
 
   it should "return true for a subject path with item indices when the path has wildcards" in {
     val aPath = TagPath.fromSequence(1, 4).thenTag(2)
     val bPath = TagPath.fromSequence(1).thenTag(2)
-    aPath.endsWithSubPathOf(bPath) shouldBe true
+    aPath.endsWithSuperPath(bPath) shouldBe true
   }
 
   "Parsing a tag path" should "work for well-formed depth 0 tag paths" in {
