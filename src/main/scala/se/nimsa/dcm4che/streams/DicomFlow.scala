@@ -47,6 +47,19 @@ trait DicomEndHandling extends DicomFlow {
   }
 }
 
+trait ValueAlways extends DicomFlow {
+
+  override def onHeader(part: DicomHeader): List[DicomPart] = {
+    if (part.length == 0)
+      part :: DicomValueChunk(part.bigEndian, ByteString.empty, last = true) :: Nil
+    else
+      super.onHeader(part)
+  }
+
+  override def onValueChunk(part: DicomValueChunk): List[DicomPart] =
+    if (part.bytes.isEmpty) Nil else super.onValueChunk(part)
+}
+
 trait ItemHandling extends DicomFlow {
   def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] = onPart(part)
   def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = onPart(part)
@@ -128,7 +141,7 @@ trait TagPathTracking extends DicomFlow with ItemHandling {
   }
 }
 
-trait DelimitationsAlways extends DicomFlow with ItemHandling {
+trait DelimitationAlways extends DicomFlow with ItemHandling {
   var partStack: List[LengthPart] = Nil
 
   def subtractLength(seqsAndItems: List[DicomPart], part: DicomPart): List[LengthPart] =

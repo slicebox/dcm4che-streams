@@ -464,7 +464,7 @@ object DicomFlows {
     * documentation.
     */
   val sequenceLengthFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with DelimitationsAlways)
+    DicomFlowFactory.create(new DicomFlow with DelimitationAlways)
       .via(DicomFlowFactory.create(new DicomFlow with ItemHandling {
         val undeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
         val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)

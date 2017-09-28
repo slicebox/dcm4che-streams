@@ -29,7 +29,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 56)
@@ -61,7 +61,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 32)
@@ -79,7 +79,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -107,7 +107,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 52)
@@ -131,8 +131,8 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationsAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 24)
@@ -143,4 +143,34 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectSequenceDelimitation()
       .expectDicomComplete()
   }
+
+  "The value always flow" should "insert empty value chunks after length zero headers" in {
+    val bytes = patientNameJohnDoe ++ emptyPatientName
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk(8)
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk(0)
+      .expectDicomComplete()
+  }
+
+  it should "not insert duplicate delimiters in streams where they are already inserted" in {
+    val bytes = emptyPatientName
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk(0)
+      .expectDicomComplete()
+  }
+
 }

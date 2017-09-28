@@ -37,6 +37,7 @@ object TestData {
   val patientNameJohnDoe: ByteString = tagToBytesLE(0x00100010) ++ ByteString("PN") ++ shortToBytesLE(0x0008) ++ ByteString("John^Doe")
   val patientNameJohnDoeBE: ByteString = tagToBytesBE(0x00100010) ++ ByteString("PN") ++ shortToBytesBE(0x0008) ++ ByteString("John^Doe")
   val patientNameJohnDoeImplicit: ByteString = tagToBytesLE(0x00100010) ++ intToBytesLE(0x00000008) ++ ByteString("John^Doe")
+  val emptyPatientName: ByteString = tagToBytesLE(0x00100010) ++ ByteString("PN") ++ shortToBytesLE(0x0000)
   val studyDate: ByteString = tagToBytesLE(0x00080020) ++ ByteString("DA") ++ shortToBytesLE(0x0008) ++ ByteString("19700101")
 
   def item(): ByteString = item(0xFFFFFFFF)
