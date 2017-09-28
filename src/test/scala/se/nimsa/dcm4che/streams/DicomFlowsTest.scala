@@ -14,7 +14,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 import scala.concurrent.ExecutionContextExecutor
 
 
-class DicomFlowsTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
+class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
   import DicomFlows._
   import DicomModifyFlow._

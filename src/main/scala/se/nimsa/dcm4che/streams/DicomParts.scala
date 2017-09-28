@@ -22,17 +22,27 @@ import org.dcm4che3.data.{SpecificCharacterSet, VR}
 
 object DicomParts {
 
+  /**
+    * The most general representation of a DICOM stream chunk
+    */
   trait DicomPart {
     def bigEndian: Boolean
     def bytes: ByteString
   }
 
+  /**
+    * A `DicomPart` with a tag number (e.g. `DicomHeader`, `DicomSequence`, 'DicomFragments')
+    */
   trait TagPart extends DicomPart {
     def tag: Int
   }
 
+  /**
+    * A 'DicomPart' with a length attribute (e.g. `DicomHeader`, `DicomSequence`, 'DicomItem')
+    */
   trait LengthPart extends DicomPart {
     def length: Long
+    def hasLength: Boolean = length >= 0
   }
 
   case class DicomPreamble(bytes: ByteString) extends DicomPart {
@@ -83,13 +93,12 @@ object DicomParts {
 
   case class DicomDeflatedChunk(bigEndian: Boolean, bytes: ByteString) extends DicomPart
 
-  trait DicomItem extends DicomPart {
+  trait DicomItem extends LengthPart {
     def index: Int
     def length: Long
   }
 
   case class DicomSequenceItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomItem {
-    def explicitLength: Boolean = length >= 0
     override def toString = s"DicomSequenceItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
