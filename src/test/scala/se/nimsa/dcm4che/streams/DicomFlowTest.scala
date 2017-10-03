@@ -295,7 +295,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       None, // sequence end
       Some(TagPath.fromTag(Tag.PixelData)), // fragments start
       Some(TagPath.fromTag(Tag.PixelData)), // item start
-      None, // fragment data
+      Some(TagPath.fromTag(Tag.PixelData)), // fragment data
       None // fragments end
     )
 

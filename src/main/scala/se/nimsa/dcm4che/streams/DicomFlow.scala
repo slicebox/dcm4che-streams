@@ -209,6 +209,7 @@ trait GuaranteedDelimitationEvents extends DicomFlow {
 trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
 
   protected var tagPath: Option[TagPath] = None
+  protected var inFragments = false
 
   abstract override def onHeader(part: DicomHeader): List[DicomPart] = {
     tagPath = tagPath.map {
@@ -219,7 +220,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
   }
 
   abstract override def onValueChunk(part: DicomValueChunk): List[DicomPart] = {
-    if (part.last)
+    if (part.last && !inFragments)
       tagPath = tagPath.flatMap(_.previous)
     super.onValueChunk(part)
   }
@@ -241,6 +242,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
   }
 
   abstract override def onFragmentsStart(part: DicomFragments): List[DicomPart] = {
+    inFragments = true
     tagPath = tagPath.map {
       case t: TagPathTag => t.previous.map(_.thenTag(part.tag)).getOrElse(TagPath.fromTag(part.tag))
       case s: TagPathSequence => s.thenTag(part.tag)
@@ -249,6 +251,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
   }
 
   abstract override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = {
+    inFragments = false
     tagPath = tagPath.flatMap {
       case t: TagPathTag => t.previous.flatMap(_.previous)
       case s: TagPathSequence => s.previous
