@@ -16,7 +16,7 @@ resolvers ++= Seq(
 // deps
 
 libraryDependencies ++= {
-  val akkaVersion = "2.5.4"
+  val akkaVersion = "2.5.6"
   Seq(
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
