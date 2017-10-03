@@ -80,6 +80,8 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   it should "insert attributes if not present also at end of dataset" in {
     val bytes = studyDate
 
+    println()
+
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => patientNameJohnDoe.drop(8), insert = true)))

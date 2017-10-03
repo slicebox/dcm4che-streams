@@ -142,21 +142,36 @@ object DicomFlows {
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with ItemHandling with TagPathTracking {
+    DicomFlowFactory.create(new DicomFlow with JustEmit with TagPathTracking {
 
       var keeping = false
-
-      override def onValueChunk(part: DicomValueChunk): List[DicomPart] = if (keeping) part :: Nil else Nil
-      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = if (keeping) part :: Nil else Nil
-      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = if (keeping) part :: Nil else Nil
-      override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = if (keeping) part :: Nil else Nil
-      override def onPart(part: DicomPart): List[DicomPart] = {
+      def emit[A <: DicomPart](part: DicomPart, parts: List[DicomPart]): List[DicomPart] =
+        parts.filter {
+          case p if p == part => keeping
+          case _ => true
+        }
+      def updateAndEmit[A <: DicomPart](part: A, handle: A => List[DicomPart]): List[DicomPart] = {
+        val parts = handle(part) // updates tag path
         keeping = tagPath match {
           case Some(path) => tagCondition(path)
           case None => defaultCondition(part)
         }
-        if (keeping) part :: Nil else Nil
+        emit(part, parts)
       }
+
+      override def onPart(part: DicomPart): List[DicomPart] = updateAndEmit(part, super.onPart)
+      override def onHeader(part: DicomHeader): List[DicomPart] = updateAndEmit(part, super.onHeader)
+      override def onPreamble(part: DicomPreamble): List[DicomPart] = updateAndEmit(part, super.onPreamble)
+      override def onValueChunk(part: DicomValueChunk): List[DicomPart] = emit(part, super.onValueChunk(part))
+      override def onSequenceStart(part: DicomSequence): List[DicomPart] = updateAndEmit(part, super.onSequenceStart)
+      override def onUnknownPart(part: DicomUnknownPart): List[DicomPart] = updateAndEmit(part, super.onUnknownPart)
+      override def onFragmentsStart(part: DicomFragments): List[DicomPart] = updateAndEmit(part, super.onFragmentsStart)
+      override def onDeflatedChunk(part: DicomDeflatedChunk): List[DicomPart] = updateAndEmit(part, super.onDeflatedChunk)
+      override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] = updateAndEmit(part, super.onSequenceItemStart)
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = emit(part, super.onSequenceEnd(part))
+      override def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = updateAndEmit(part, super.onFragmentsItemStart)
+      override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = emit(part, super.onFragmentsEnd(part))
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = emit(part, super.onSequenceItemEnd(part))
     })
 
   /**
@@ -464,20 +479,35 @@ object DicomFlows {
     * documentation.
     */
   val sequenceLengthFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with DelimitationAlways)
-      .via(DicomFlowFactory.create(new DicomFlow with ItemHandling {
-        val undeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
-        val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
+    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents { // always delimited flow that emits all delimitations
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+        part match {
+          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
+          case p => super.onSequenceItemEnd(p)
+        }
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+        part match {
+          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
+          case p => super.onSequenceEnd(p)
+        }
+    }).via(DicomFlowFactory.create(new DicomFlow with JustEmit { // map to indeterminate length
+      val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
+      val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
 
-        override def onSequenceStart(part: DicomSequence): List[DicomPart] =
-          part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ undeterminateBytes) :: Nil
-        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
-          part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes) :: Nil
-        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
-          part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ undeterminateBytes) :: Nil
-        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
-          part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes) :: Nil
-      }))
+      override def onSequenceStart(part: DicomSequence): List[DicomPart] =
+        super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+        super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
+      override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
+        super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+        super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
+    }))
+
+  /**
+    * Remove all DICOM parts that do not contribute to file bytes
+    */
+  val syntheticPartsFilter: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart].filter(_.bytes.nonEmpty)
 }
 
 

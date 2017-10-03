@@ -1,10 +1,12 @@
 package se.nimsa.dcm4che.streams
 
+import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Flow, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
+import akka.util.ByteString
 import org.dcm4che3.data.Tag
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 import se.nimsa.dcm4che.streams.DicomPartFlow.partFlow
@@ -22,26 +24,97 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
   override def afterAll(): Unit = system.terminate()
 
-  "The delimitation always flow" should "insert delimitation parts at the end of sequences and items with determinate length" in {
+  "The dicom flow" should "call the correct events for streamed dicom parts" in {
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++
+      patientNameJohnDoe ++ sequence(Tag.DerivationCodeSequence) ++ item() ++ studyDate ++ itemEnd ++ sequenceEnd ++
+      pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragmentsEnd
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(DicomFlowFactory.create(new DicomFlow {
+        override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = TestPart("Fragments End") :: Nil
+        override def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = TestPart("Fragments Item Start") :: Nil
+        override def onFragmentsStart(part: DicomFragments): List[DicomPart] = TestPart("Fragments Start") :: Nil
+        override def onHeader(part: DicomHeader): List[DicomPart] = TestPart("Header") :: Nil
+        override def onPreamble(part: DicomPreamble): List[DicomPart] = TestPart("Preamble") :: Nil
+        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = TestPart("Sequence End") :: Nil
+        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = TestPart("Sequence Item End") :: Nil
+        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] = TestPart("Sequence Item Start") :: Nil
+        override def onSequenceStart(part: DicomSequence): List[DicomPart] = TestPart("Sequence Start") :: Nil
+        override def onValueChunk(part: DicomValueChunk): List[DicomPart] = TestPart("Value Chunk") :: Nil
+        override def onDeflatedChunk(part: DicomDeflatedChunk): List[DicomPart] = Nil
+        override def onUnknownPart(part: DicomUnknownPart): List[DicomPart] = Nil
+        override def onPart(part: DicomPart): List[DicomPart] = Nil
+      }))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectTestPart("Preamble")
+      .expectTestPart("Header")
+      .expectTestPart("Value Chunk")
+      .expectTestPart("Header")
+      .expectTestPart("Value Chunk")
+      .expectTestPart("Header")
+      .expectTestPart("Value Chunk")
+      .expectTestPart("Sequence Start")
+      .expectTestPart("Sequence Item Start")
+      .expectTestPart("Header")
+      .expectTestPart("Value Chunk")
+      .expectTestPart("Sequence Item End")
+      .expectTestPart("Sequence End")
+      .expectTestPart("Fragments Start")
+      .expectTestPart("Fragments Item Start")
+      .expectTestPart("Value Chunk")
+      .expectTestPart("Fragments End")
+      .expectDicomComplete()
+  }
+
+  def guaranteedDelimitationTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+        part match {
+          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
+          case p => super.onSequenceItemEnd(p)
+        }
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+        part match {
+          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
+          case p => super.onSequenceEnd(p)
+        }
+    })
+
+  "The guaranteed delimitation flow" should "insert delimitation parts at the end of sequences and items with determinate length" in {
     val bytes =
       sequence(Tag.DerivationCodeSequence, 56) ++ item(16) ++ studyDate ++ item() ++ studyDate ++ itemEnd ++
         sequence(Tag.AbstractPriorCodeSequence) ++ item() ++ studyDate ++ itemEnd ++ item(16) ++ studyDate ++ sequenceEnd
 
+    var expectedDelimitationLengths = List(0, 8, 0, 8, 0, 8)
+
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(partFlow)
+      .via(DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
+        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = {
+          part.bytes.length shouldBe expectedDelimitationLengths.head
+          expectedDelimitationLengths = expectedDelimitationLengths.tail
+          super.onSequenceItemEnd(part)
+        }
+        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = {
+          part.bytes.length shouldBe expectedDelimitationLengths.head
+          expectedDelimitationLengths = expectedDelimitationLengths.tail
+          super.onSequenceEnd(part)
+        }
+      }))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 56)
       .expectItem(1, 16)
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
-      .expectItemDelimitation()
+      //.expectItemDelimitation() // delimitations not emitted by default
       .expectItem(2)
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
       .expectItemDelimitation()
-      .expectSequenceDelimitation()
+      //.expectSequenceDelimitation()
       .expectSequence(Tag.AbstractPriorCodeSequence, -1)
       .expectItem(1, -1)
       .expectHeader(Tag.StudyDate)
@@ -50,7 +123,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectItem(2, 16)
       .expectHeader(Tag.StudyDate)
       .expectValueChunk()
-      .expectItemDelimitation()
+      //.expectItemDelimitation()
       .expectSequenceDelimitation()
       .expectDicomComplete()
   }
@@ -61,7 +134,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(guaranteedDelimitationTestFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 32)
@@ -79,7 +152,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(guaranteedDelimitationTestFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -107,7 +180,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(guaranteedDelimitationTestFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 52)
@@ -125,31 +198,43 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectDicomComplete()
   }
 
-  it should "not insert duplicate delimiters in streams where they are already inserted" in {
-    val bytes =
-      sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ studyDate
+  def guaranteedValueTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
+      override def onValueChunk(part: DicomValueChunk): List[DicomPart] =
+        part match {
+          case DicomValueChunkMarker => part :: super.onValueChunk(part)
+          case p => super.onValueChunk(p)
+        }
+    })
+
+  "The guaranteed value flow" should "call onValueChunk callback also after length zero headers" in {
+    val bytes = patientNameJohnDoe ++ emptyPatientName
+
+    var expectedChunkLengths = List(8, 0)
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
-      .via(DicomFlowFactory.create(new DicomFlow with DelimitationAlways))
+      .via(DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
+        override def onValueChunk(part: DicomValueChunk): List[DicomPart] = {
+          part.bytes.length shouldBe expectedChunkLengths.head
+          expectedChunkLengths = expectedChunkLengths.tail
+          super.onValueChunk(part)
+        }
+      }))
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence, 24)
-      .expectItem(1, 16)
-      .expectHeader(Tag.StudyDate)
-      .expectValueChunk()
-      .expectItemDelimitation()
-      .expectSequenceDelimitation()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk(8)
+      .expectHeader(Tag.PatientName)
       .expectDicomComplete()
   }
 
-  "The value always flow" should "insert empty value chunks after length zero headers" in {
+  it should "emit empty chunks when overriding onValueChunk appropriately" in {
     val bytes = patientNameJohnDoe ++ emptyPatientName
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
+      .via(guaranteedValueTestFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -159,18 +244,78 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectDicomComplete()
   }
 
-  it should "not insert duplicate delimiters in streams where they are already inserted" in {
-    val bytes = emptyPatientName
+  def endEventTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with JustEmit with EndEvent {
+      override def onEnd(): List[DicomPart] = DicomEndMarker :: Nil
+    })
+
+  "The end event flow" should "notify when dicom stream ends" in {
+    val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
-      .via(DicomFlowFactory.create(new DicomFlow with ValueAlways))
+      .via(endEventTestFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
-      .expectValueChunk(0)
+      .expectValueChunk()
+      .request(1)
+      .expectNextChainingPF {
+        case DicomEndMarker => true
+      }
       .expectDicomComplete()
+  }
+
+  "Dicom flows with tag path tracking" should "update the tag path through attributes, sequences and fragments" in {
+    val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ // FMI
+      patientNameJohnDoe ++ // attribute
+      sequence(Tag.DerivationCodeSequence) ++ item() ++ studyDate ++ itemEnd ++ item() ++ // sequence
+      sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ studyDate ++ // nested sequence (determinate length)
+      itemEnd ++ sequenceEnd ++
+      pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragmentsEnd
+
+    var expectedPaths = List(
+      None, // preamble
+      Some(TagPath.fromTag(Tag.FileMetaInformationGroupLength)), None, // FMI group length header, then value
+      Some(TagPath.fromTag(Tag.TransferSyntaxUID)), None, // Transfer syntax header, then value
+      Some(TagPath.fromTag(Tag.PatientName)), None, // Patient name header, then value
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence)), // sequence start
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1)), // item start
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.StudyDate)), // study date header
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1)), // study date value
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence)), // item end
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2)), // item start
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenSequence(Tag.DerivationCodeSequence)), // sequence start
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenSequence(Tag.DerivationCodeSequence, 1)), // item start
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.StudyDate)), // Study date header
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenSequence(Tag.DerivationCodeSequence, 1)), // Study date value
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenSequence(Tag.DerivationCodeSequence)), //  item end (inserted)
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 2)), // sequence end (inserted)
+      Some(TagPath.fromSequence(Tag.DerivationCodeSequence)), // item end
+      None, // sequence end
+      Some(TagPath.fromTag(Tag.PixelData)), // fragments start
+      Some(TagPath.fromTag(Tag.PixelData)), // item start
+      None, // fragment data
+      None // fragments end
+    )
+
+    def check(tagPath: Option[TagPath]): Unit = {
+      tagPath shouldBe expectedPaths.head
+      expectedPaths = expectedPaths.tail
+    }
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking {
+        override def onPart(part: DicomPart): List[DicomPart] = {
+          check(tagPath)
+          part :: Nil
+        }
+      }))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .request(23)
+      .expectNextN(23)
   }
 
 }

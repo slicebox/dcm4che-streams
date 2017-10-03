@@ -103,7 +103,7 @@ object DicomParts {
   }
 
   case class DicomFragmentsItem(index: Int, length: Long, bigEndian: Boolean, bytes: ByteString) extends DicomItem {
-    override def toString = s"DicomFragmentItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
+    override def toString = s"DicomFragmentsItem index = $index length = $length ${if (bigEndian) "(big endian) " else ""}$bytes"
   }
 
   case class DicomSequenceItemDelimitation(index: Int, bigEndian: Boolean, bytes: ByteString) extends DicomPart

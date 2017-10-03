@@ -22,6 +22,12 @@ object TestUtils {
     out
   }
 
+  case class TestPart(id: String) extends DicomPart {
+    override def bigEndian: Boolean = false
+    override def bytes: ByteString = ByteString.empty
+    override def toString = s"TestPart: $id"
+  }
+
   type PartProbe = TestSubscriber.Probe[DicomPart]
 
   implicit class DicomPartProbe(probe: PartProbe) {
@@ -171,6 +177,13 @@ object TestUtils {
       .expectNextChainingPF {
         case p: DicomAttributes if p == attributesPart => true
         case p => throw new RuntimeException(s"Expected DicomAttributes with part = $attributesPart, got $p")
+      }
+
+    def expectTestPart(id: String): PartProbe = probe
+      .request(1)
+      .expectNextChainingPF {
+        case a: TestPart if a.id == id => true
+        case p => throw new RuntimeException(s"Expected TestPart with id = $id, got $p")
       }
   }
 
