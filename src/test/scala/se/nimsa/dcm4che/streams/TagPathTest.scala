@@ -394,4 +394,12 @@ class TagPathTest extends FlatSpec with Matchers {
       TagPath.parse("")
     }
   }
+
+  "The contains test" should "return for any tag number on the tag path" in {
+    val path = TagPath.fromSequence(1, 1).thenSequence(2).thenTag(3)
+    path.contains(1) shouldBe true
+    path.contains(2) shouldBe true
+    path.contains(3) shouldBe true
+    path.contains(4) shouldBe false
+  }
 }

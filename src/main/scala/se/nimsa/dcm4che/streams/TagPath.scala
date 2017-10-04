@@ -89,6 +89,15 @@ sealed trait TagPath {
   }
 
   /**
+    * @param tag tag number
+    * @return `true` if this tag path contains the input tag number
+    * @example (0008,9215)[*].(0010,0010) contains 0x00089215
+    * @example (0008,9215)[*].(0010,0010) contains 0x00100010
+    * @example (0008,9215)[*].(0010,0010) does not contain 0x00100020
+    */
+  def contains(tag: Int): Boolean = toList.map(_.tag).contains(tag)
+
+  /**
     * A super-path of another path is a path of equal length with the same sequence of tag numbers. Differences are in the
     * specification of items. A path with a less restrictive specification of items (wildcard/all
     * items instead of item index) is said to be a super-path of the more general path.

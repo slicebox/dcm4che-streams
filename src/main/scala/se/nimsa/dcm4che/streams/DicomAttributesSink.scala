@@ -68,7 +68,7 @@ object DicomAttributesSink {
     * meta data and one for the dataset.
     *
     * Based heavily and exclusively on the dcm4che
-    * <a href="https://github.com/dcm4che/dcm4che/blob/master/dcm4che-core/src/test/java/org/dcm4che3/io/DicomInputStreamTest.java">DicomInputStream</a>
+    * <a href="https://github.com/dcm4che/dcm4che/blob/master/dcm4che-core/src/main/java/org/dcm4che3/io/DicomInputStream.java">DicomInputStream</a>
     * class (complementing what is not covered by <code>DicomPartFlow</code>.
     *
     * @param ec an implicit ExecutionContext
