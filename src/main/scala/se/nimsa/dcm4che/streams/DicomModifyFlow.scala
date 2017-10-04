@@ -57,7 +57,7 @@ object DicomModifyFlow {
     * @return the modified flow of DICOM parts
     */
   def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with TagPathTracking with EndEvent with GuaranteedValueEvent {
+    DicomFlowFactory.create(new DicomFlow with JustEmit with EndEvent with TagPathTracking {
 
       val sortedModifications: List[TagModification] = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 
@@ -91,7 +91,7 @@ object DicomModifyFlow {
         sequenceMaybe.map(tagToTest.startsWithSubPath).getOrElse(tagToTest.isRoot)
 
       override def onHeader(header: DicomHeader): List[DicomPart] = {
-        super.onHeader(header)
+        super.onHeader(header) // update tag path
         updateSyntax(header)
         val insertParts = sortedModifications
           .filter(_.insert)
@@ -101,10 +101,17 @@ object DicomModifyFlow {
         val modifyPart = sortedModifications
           .find(m => tagPath.exists(m.matches))
           .map { tagModification =>
-            currentHeader = Some(header)
-            currentModification = Some(tagModification)
-            value = ByteString.empty
-            Nil
+            if (header.length > 0) {
+              currentHeader = Some(header)
+              currentModification = Some(tagModification)
+              value = ByteString.empty
+              Nil
+            } else {
+              val newValue = tagModification.modification(ByteString.empty)
+              val newHeader = header.withUpdatedLength(newValue.length)
+              val chunkOrNot = if (newValue.nonEmpty) DicomValueChunk(bigEndian, newValue, last = true) :: Nil else Nil
+              newHeader :: chunkOrNot
+            }
           }
           .getOrElse(header :: Nil)
         latestTagPath = tagPath
@@ -112,13 +119,14 @@ object DicomModifyFlow {
       }
 
       override def onSequenceStart(part: DicomSequence): List[DicomPart] = {
+        super.onSequenceStart(part) // update tag path
         latestTagPath = tagPath
-        super.onSequenceStart(part)
+        part :: Nil
       }
 
-      override def onValueChunk(chunk: DicomValueChunk): List[DicomPart] =
+      override def onValueChunk(chunk: DicomValueChunk): List[DicomPart] = {
+        super.onValueChunk(chunk) // update tag path
         if (currentModification.isDefined && currentHeader.isDefined) {
-          super.onValueChunk(chunk)
           value = value ++ chunk.bytes
           if (chunk.last) {
             val newValue = currentModification.get.modification(value)
@@ -130,10 +138,11 @@ object DicomModifyFlow {
           } else
             Nil
         } else
-          super.onValueChunk(chunk)
+          chunk :: Nil
+      }
 
       override def onEnd(): List[DicomPart] =
-        super.onEnd() ::: sortedModifications
+        sortedModifications
           .filter(_.insert)
           .filter(_.tagPath.isRoot)
           .filter(m => latestTagPath.exists(_ < m.tagPath))

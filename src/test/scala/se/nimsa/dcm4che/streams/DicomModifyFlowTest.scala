@@ -80,8 +80,6 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   it should "insert attributes if not present also at end of dataset" in {
     val bytes = studyDate
 
-    println()
-
     val source = Source.single(bytes)
       .via(new DicomPartFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => patientNameJohnDoe.drop(8), insert = true)))
@@ -91,6 +89,20 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectValueChunk(studyDate.drop(8))
       .expectHeader(Tag.PatientName, VR.PN, patientNameJohnDoe.length - 8)
       .expectValueChunk(patientNameJohnDoe.drop(8))
+      .expectDicomComplete()
+  }
+
+  it should "insert attributes if not present also at end of dataset 2" in {
+    val bytes = tagToBytesLE(0x00080050) ++ ByteString("SH") ++ shortToBytesLE(0x0000)
+
+    val source = Source.single(bytes)
+      .via(new DicomPartFlow())
+      .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.SOPInstanceUID), _ => ByteString("1.2.3.4 "), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.SOPInstanceUID, VR.UI, 8)
+      .expectValueChunk(8)
+      .expectHeader(Tag.AccessionNumber, VR.SH, 0)
       .expectDicomComplete()
   }
 
