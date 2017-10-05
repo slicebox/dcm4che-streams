@@ -508,6 +508,40 @@ object DicomFlows {
     * Remove all DICOM parts that do not contribute to file bytes
     */
   val syntheticPartsFilter: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart].filter(_.bytes.nonEmpty)
+
+  /**
+    * This flow guarantees that all `DicomHeader` parts are immediately followed by one or more `DicomValueChunk`s.
+    * Normally, an empty attribute consists of a `DicomHeader` only. To allow the flow to keep track of inserted parts,
+    * empty `DicomValueChunk`s are of the subtype `DicomValueChunkMarker`.
+    */
+  val guaranteedValueFlow: Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
+      override def onValueChunk(part: DicomValueChunk): List[DicomPart] = part :: Nil
+    })
+
+  /**
+    * This flow guarantees that the end of sequences are marked with a `DicomSequenceDelimitation` and that the end of
+    * items are marked with a `DicomSequenceItemDelimitation`. Normally, this is not the case for sequences and items
+    * with determinate length. To allow the flow to keep track of inserted parts downstream, inserted delimitations are
+    * of the subtypes `DicomSequenceDelimitationMarkser` and `DicomSequenceItemDelimitationMarker`.
+    *
+    * @return the associated flow
+    */
+  def guaranteedDelimitationFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+        part match {
+          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
+          case p => super.onSequenceItemEnd(p)
+        }
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+        part match {
+          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
+          case p => super.onSequenceEnd(p)
+        }
+    })
+
+
 }
 
 

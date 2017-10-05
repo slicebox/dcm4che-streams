@@ -18,6 +18,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
   import DicomParts._
   import TestData._
   import TestUtils._
+  import DicomFlows._
 
   implicit val materializer: ActorMaterializer = ActorMaterializer()
   implicit val ec: ExecutionContextExecutor = system.dispatcher
@@ -67,20 +68,6 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectTestPart("Fragments End")
       .expectDicomComplete()
   }
-
-  def guaranteedDelimitationTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
-      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
-        part match {
-          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
-          case p => super.onSequenceItemEnd(p)
-        }
-      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
-        part match {
-          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
-          case p => super.onSequenceEnd(p)
-        }
-    })
 
   "The guaranteed delimitation flow" should "insert delimitation parts at the end of sequences and items with determinate length" in {
     val bytes =
@@ -134,7 +121,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(guaranteedDelimitationTestFlow())
+      .via(guaranteedDelimitationFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 32)
@@ -152,7 +139,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(guaranteedDelimitationTestFlow())
+      .via(guaranteedDelimitationFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
@@ -180,7 +167,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(guaranteedDelimitationTestFlow())
+      .via(guaranteedDelimitationFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 52)
@@ -197,15 +184,6 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectSequenceDelimitation()
       .expectDicomComplete()
   }
-
-  def guaranteedValueTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
-      override def onValueChunk(part: DicomValueChunk): List[DicomPart] =
-        part match {
-          case DicomValueChunkMarker => part :: super.onValueChunk(part)
-          case p => super.onValueChunk(p)
-        }
-    })
 
   "The guaranteed value flow" should "call onValueChunk callback also after length zero headers" in {
     val bytes = patientNameJohnDoe ++ emptyPatientName
@@ -234,7 +212,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(guaranteedValueTestFlow())
+      .via(guaranteedValueFlow)
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
