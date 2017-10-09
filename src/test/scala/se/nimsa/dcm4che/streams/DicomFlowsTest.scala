@@ -200,6 +200,22 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
       .expectHeader(Tag.ImageType)
   }
 
+  "The DICOM tag filter" should "filter attributes in sequences" in {
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(tagFilter(_ => true)(tagPath => tagPath.tag != Tag.PatientName))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
 
   "The DICOM blacklist filter" should "filter elements matching the blacklist condition" in {
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ fmiVersion ++ tsuidExplicitLE ++ studyDate
@@ -513,7 +529,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -532,7 +548,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -549,7 +565,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -566,7 +582,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomComplete()
@@ -577,7 +593,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -591,7 +607,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -613,7 +629,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
     val source = Source.single(bytes)
       .via(partFlow)
       .prepend(Source.single(SomePart))
-      .via(fmiGroupLengthFlow)
+      .via(fmiGroupLengthFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .request(1)

@@ -146,17 +146,24 @@ object DicomFlows {
 
       var keeping = false
 
+      def updateKeeping(part: DicomPart): Unit =
+        keeping = tagPath match {
+          case Some(path) => tagCondition(path)
+          case None => defaultCondition(part)
+        }
+
       override def onPart(part: DicomPart): List[DicomPart] = {
         part match {
-          case p: DicomValueChunk => if (keeping) p :: Nil else Nil
+          case p: DicomValueChunk =>
+            val items = if (keeping) p :: Nil else Nil
+            if (p.last)
+              updateKeeping(p)
+            items
           case p: DicomSequenceDelimitation => if (keeping) p :: Nil else Nil
           case p: DicomSequenceItemDelimitation => if (keeping) p :: Nil else Nil
           case p: DicomFragmentsDelimitation => if (keeping) p :: Nil else Nil
           case p =>
-            keeping = tagPath match {
-              case Some(path) => tagCondition(path)
-              case None => defaultCondition(part)
-            }
+           updateKeeping(p)
             if (keeping) p :: Nil else Nil
         }
       }
