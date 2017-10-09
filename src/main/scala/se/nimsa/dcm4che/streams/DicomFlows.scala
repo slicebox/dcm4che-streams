@@ -481,30 +481,20 @@ object DicomFlows {
     * documentation.
     */
   val sequenceLengthFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents { // always delimited flow that emits all delimitations
-      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
-        part match {
-          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
-          case p => super.onSequenceItemEnd(p)
-        }
-      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
-        part match {
-          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
-          case p => super.onSequenceEnd(p)
-        }
-    }).via(DicomFlowFactory.create(new DicomFlow with JustEmit { // map to indeterminate length
-      val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
-      val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
+    guaranteedDelimitationFlow()
+      .via(DicomFlowFactory.create(new DicomFlow with JustEmit { // map to indeterminate length
+        val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
+        val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
 
-      override def onSequenceStart(part: DicomSequence): List[DicomPart] =
-        super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
-      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
-        super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
-      override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
-        super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
-      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
-        super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
-    }))
+        override def onSequenceStart(part: DicomSequence): List[DicomPart] =
+          super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+          super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
+        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
+          super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+          super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
+      }))
 
   /**
     * Remove all DICOM parts that do not contribute to file bytes
