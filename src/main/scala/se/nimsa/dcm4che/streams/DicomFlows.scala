@@ -142,36 +142,24 @@ object DicomFlows {
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with TagPathTracking {
+    DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking {
 
       var keeping = false
-      def emit[A <: DicomPart](part: DicomPart, parts: List[DicomPart]): List[DicomPart] =
-        parts.filter {
-          case p if p == part => keeping
-          case _ => true
-        }
-      def updateAndEmit[A <: DicomPart](part: A, handle: A => List[DicomPart]): List[DicomPart] = {
-        val parts = handle(part) // updates tag path
-        keeping = tagPath match {
-          case Some(path) => tagCondition(path)
-          case None => defaultCondition(part)
-        }
-        emit(part, parts)
-      }
 
-      override def onPart(part: DicomPart): List[DicomPart] = updateAndEmit(part, super.onPart)
-      override def onHeader(part: DicomHeader): List[DicomPart] = updateAndEmit(part, super.onHeader)
-      override def onPreamble(part: DicomPreamble): List[DicomPart] = updateAndEmit(part, super.onPreamble)
-      override def onValueChunk(part: DicomValueChunk): List[DicomPart] = emit(part, super.onValueChunk(part))
-      override def onSequenceStart(part: DicomSequence): List[DicomPart] = updateAndEmit(part, super.onSequenceStart)
-      override def onUnknownPart(part: DicomUnknownPart): List[DicomPart] = updateAndEmit(part, super.onUnknownPart)
-      override def onFragmentsStart(part: DicomFragments): List[DicomPart] = updateAndEmit(part, super.onFragmentsStart)
-      override def onDeflatedChunk(part: DicomDeflatedChunk): List[DicomPart] = updateAndEmit(part, super.onDeflatedChunk)
-      override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] = updateAndEmit(part, super.onSequenceItemStart)
-      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = emit(part, super.onSequenceEnd(part))
-      override def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = updateAndEmit(part, super.onFragmentsItemStart)
-      override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = emit(part, super.onFragmentsEnd(part))
-      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = emit(part, super.onSequenceItemEnd(part))
+      override def onPart(part: DicomPart): List[DicomPart] = {
+        part match {
+          case p: DicomValueChunk => if (keeping) p :: Nil else Nil
+          case p: DicomSequenceDelimitation => if (keeping) p :: Nil else Nil
+          case p: DicomSequenceItemDelimitation => if (keeping) p :: Nil else Nil
+          case p: DicomFragmentsDelimitation => if (keeping) p :: Nil else Nil
+          case p =>
+            keeping = tagPath match {
+              case Some(path) => tagCondition(path)
+              case None => defaultCondition(part)
+            }
+            if (keeping) p :: Nil else Nil
+        }
+      }
     })
 
   /**
