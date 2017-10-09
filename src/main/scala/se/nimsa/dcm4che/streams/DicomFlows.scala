@@ -275,8 +275,11 @@ object DicomFlows {
     */
   def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] = {
     val maxTag = if (tags.isEmpty) 0 else tags.max
-    val tagCondition = tags.contains _
-    val stopCondition = if (tags.isEmpty) (_: Int) => true else (tag: Int) => tag > maxTag
+    val tagCondition = (tagPath: TagPath) => tagPath.isRoot && tags.contains(tagPath.tag)
+    val stopCondition = if (tags.isEmpty)
+      (_: TagPath) => true
+    else
+      (tagPath: TagPath) => tagPath.isRoot && tagPath.tag > maxTag
     collectAttributesFlow(tagCondition, stopCondition, maxBufferSize)
   }
 
@@ -296,80 +299,79 @@ object DicomFlows {
     *                      if this limit is exceed. Set to 0 for an unlimited buffer size
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
-  def collectAttributesFlow(tagCondition: Int => Boolean, stopCondition: Int => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
-    Flow[DicomPart]
-      .concat(Source.single(DicomEndMarker))
-      .statefulMapConcat {
-        () =>
-          var reachedEnd = false
-          var currentBufferSize = 0
-          var currentAttribute: Option[DicomAttribute] = None
-          var buffer: List[DicomPart] = Nil
-          var attributes: List[DicomAttribute] = Nil
+  def collectAttributesFlow(tagCondition: TagPath => Boolean, stopCondition: TagPath => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking with EndEvent {
 
-          def attributesAndBuffer() = {
-            val parts = DicomAttributes(attributes) :: buffer
+      var reachedEnd = false
+      var currentBufferSize = 0
+      var currentAttribute: Option[DicomAttribute] = None
+      var buffer: List[DicomPart] = Nil
+      var attributes: List[DicomAttribute] = Nil
 
-            reachedEnd = true
-            buffer = Nil
-            currentBufferSize = 0
+      def attributesAndBuffer(): List[DicomPart] = {
+        val parts = DicomAttributes(attributes) :: buffer
 
-            parts
+        reachedEnd = true
+        buffer = Nil
+        currentBufferSize = 0
+
+        parts
+      }
+
+      override def onEnd(): List[DicomPart] =
+        if (reachedEnd)
+          Nil
+        else
+          attributesAndBuffer()
+
+      override def onPart(part: DicomPart): List[DicomPart] = {
+        if (reachedEnd)
+          part :: Nil
+        else {
+          if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
+            throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
           }
 
-        {
-          case DicomEndMarker if reachedEnd =>
-            Nil
+          buffer = buffer :+ part
+          currentBufferSize = currentBufferSize + part.bytes.size
 
-          case DicomEndMarker =>
-            attributesAndBuffer()
+          part match {
+            case _: DicomHeader if tagPath.exists(stopCondition) =>
+              attributesAndBuffer()
 
-          case part if reachedEnd =>
-            part :: Nil
-
-          case part =>
-            if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
-              throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
-            }
-
-            buffer = buffer :+ part
-            currentBufferSize = currentBufferSize + part.bytes.size
-
-            part match {
-              case header: DicomHeader if stopCondition(header.tag) =>
-                attributesAndBuffer()
-
-              case header: DicomHeader if tagCondition(header.tag) =>
-                currentAttribute = Some(DicomAttribute(header, Seq.empty))
-                if (header.length == 0) {
-                  attributes = attributes :+ currentAttribute.get
-                  currentAttribute = None
-                }
-                Nil
-
-              case _: DicomHeader =>
+            case header: DicomHeader if tagPath.exists(tagCondition) =>
+              currentAttribute = Some(DicomAttribute(header, Seq.empty))
+              if (header.length == 0) {
+                attributes = attributes :+ currentAttribute.get
                 currentAttribute = None
-                Nil
+              }
+              Nil
 
-              case valueChunk: DicomValueChunk =>
+            case _: DicomHeader =>
+              currentAttribute = None
+              Nil
 
-                currentAttribute match {
-                  case Some(attribute) =>
-                    val updatedAttribute = attribute.copy(valueChunks = attribute.valueChunks :+ valueChunk)
-                    currentAttribute = Some(updatedAttribute)
-                    if (valueChunk.last) {
-                      attributes = attributes :+ updatedAttribute
-                      currentAttribute = None
-                    }
-                    Nil
+            case valueChunk: DicomValueChunk =>
 
-                  case None => Nil
-                }
+              currentAttribute match {
+                case Some(attribute) =>
+                  val updatedAttribute = attribute.copy(valueChunks = attribute.valueChunks :+ valueChunk)
+                  currentAttribute = Some(updatedAttribute)
+                  if (valueChunk.last) {
+                    attributes = attributes :+ updatedAttribute
+                    currentAttribute = None
+                  }
+                  Nil
 
-              case _ => Nil
-            }
+                case None => Nil
+              }
+
+            case _ => Nil
+          }
         }
       }
+    })
+
 
   /**
     * Remove attributes from stream that may contain large quantities of data (bulk data)
@@ -429,9 +431,9 @@ object DicomFlows {
     * Buffers all file meta information attributes and calculates their lengths, then emits the correct file meta
     * information group length attribute followed by remaining FMI.
     */
-  val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+  def fmiGroupLengthFlow(): Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
     .concat(Source.single(DicomEndMarker))
-    .via(collectAttributesFlow(DicomParsing.isFileMetaInformation, (tag: Int) => !DicomParsing.isFileMetaInformation(tag), 1000000))
+    .via(collectAttributesFlow(tagPath => tagPath.isRoot && DicomParsing.isFileMetaInformation(tagPath.tag), tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), 1000000))
     .via(tagFilter(_ => true)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag)))
     .statefulMapConcat {
 

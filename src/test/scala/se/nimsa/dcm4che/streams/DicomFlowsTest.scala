@@ -443,7 +443,7 @@ class DicomFlowsTest extends TestKit(ActorSystem("DicomFlowsSpec")) with FlatSpe
 
     val source = Source.single(bytes)
       .via(new DicomPartFlow(chunkSize = 500))
-      .via(collectAttributesFlow(_ == Tag.PatientName, _ > Tag.PixelData, maxBufferSize = 1000))
+      .via(collectAttributesFlow(_.tag == Tag.PatientName, _.tag > Tag.PixelData, maxBufferSize = 1000))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomError()
