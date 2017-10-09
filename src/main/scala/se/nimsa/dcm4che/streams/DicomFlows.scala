@@ -152,21 +152,26 @@ object DicomFlows {
           case None => defaultCondition(part)
         }
 
-      override def onPart(part: DicomPart): List[DicomPart] = {
-        part match {
-          case p: DicomValueChunk =>
-            val items = if (keeping) p :: Nil else Nil
-            if (p.last)
-              updateKeeping(p)
-            items
-          case p: DicomSequenceDelimitation => if (keeping) p :: Nil else Nil
-          case p: DicomSequenceItemDelimitation => if (keeping) p :: Nil else Nil
-          case p: DicomFragmentsDelimitation => if (keeping) p :: Nil else Nil
-          case p =>
-           updateKeeping(p)
-            if (keeping) p :: Nil else Nil
-        }
+      def updateThenEmit(part: DicomPart): List[DicomPart] = {
+        updateKeeping(part)
+        if (keeping) part :: Nil else Nil
       }
+
+      def emitThenUpdate(part: DicomPart): List[DicomPart] = {
+        val items = if (keeping) part :: Nil else Nil
+        updateKeeping(part)
+        items
+      }
+
+      override def onPart(part: DicomPart): List[DicomPart] =
+        part match {
+          case p: DicomValueChunk => emitThenUpdate(p)
+          case p: DicomSequenceDelimitation => emitThenUpdate(p)
+          case p: DicomSequenceItemDelimitation => emitThenUpdate(p)
+          case p: DicomFragmentsDelimitation => emitThenUpdate(p)
+          case p => updateThenEmit(p)
+        }
+
     })
 
   /**
