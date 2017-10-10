@@ -185,6 +185,30 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectDicomComplete()
   }
 
+  it should "handle empty attributes in sequences" in {
+    val bytes =
+      sequence(Tag.DerivationCodeSequence, 52) ++ item(44) ++ emptyPatientName ++
+        sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(partFlow)
+      .via(guaranteedDelimitationFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence, 52)
+      .expectItem(1, 44)
+      .expectHeader(Tag.PatientName)
+      .expectSequence(Tag.DerivationCodeSequence, 24)
+      .expectItem(1, 16)
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk(8)
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectItemDelimitation()
+      .expectSequenceDelimitation()
+      .expectDicomComplete()
+  }
+
   "The guaranteed value flow" should "call onValueChunk callback also after length zero headers" in {
     val bytes = patientNameJohnDoe ++ emptyPatientName
 

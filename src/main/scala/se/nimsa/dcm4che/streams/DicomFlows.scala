@@ -476,13 +476,13 @@ object DicomFlows {
     }
 
   /**
-    * Sets any sequences and/or items with determinate length to undeterminate length (length = -1) and inserts
+    * Sets any sequences and/or items with determinate length to indeterminate length (length = -1) and inserts
     * delimiters.
     *
     * Most flows dealing with sequences require this filter to function as intended, see the corresponding flow
     * documentation.
     */
-  val sequenceLengthFilter: Flow[DicomPart, DicomPart, NotUsed] =
+  def forceIndeterminateLengthSequences(): Flow[DicomPart, DicomPart, NotUsed] =
     guaranteedDelimitationFlow()
       .via(DicomFlowFactory.create(new DicomFlow with JustEmit { // map to indeterminate length
         val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
