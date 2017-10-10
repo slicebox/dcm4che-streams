@@ -92,7 +92,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectDicomComplete()
   }
 
-  it should "insert attributes if not present also at end of dataset 2" in {
+  it should "insert attributes if not present also at end of dataset when last attribute is empty" in {
     val bytes = tagToBytesLE(0x00080050) ++ ByteString("SH") ++ shortToBytesLE(0x0000)
 
     val source = Source.single(bytes)

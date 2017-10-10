@@ -146,20 +146,22 @@ object DicomFlows {
 
       var keeping = false
 
-      def updateKeeping(part: DicomPart): Unit =
+      def update(part: DicomPart): Unit =
         keeping = tagPath match {
           case Some(path) => tagCondition(path)
           case None => defaultCondition(part)
         }
 
+      def emit(part: DicomPart): List[DicomPart] = if (keeping) part :: Nil else Nil
+
       def updateThenEmit(part: DicomPart): List[DicomPart] = {
-        updateKeeping(part)
-        if (keeping) part :: Nil else Nil
+        update(part)
+        emit(part)
       }
 
       def emitThenUpdate(part: DicomPart): List[DicomPart] = {
-        val items = if (keeping) part :: Nil else Nil
-        updateKeeping(part)
+        val items = emit(part)
+        update(part)
         items
       }
 

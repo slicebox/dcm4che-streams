@@ -3,6 +3,7 @@ package se.nimsa.dcm4che.streams
 import akka.NotUsed
 import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
+import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 import se.nimsa.dcm4che.streams.TagPath.{TagPathSequence, TagPathTag}
 
@@ -206,14 +207,14 @@ trait GuaranteedDelimitationEvents extends DicomFlow {
   * This implementation contains state (the current tag path). The corresponding flow must therefore be created anew for
   * each stream.
   */
-trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
+trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents with GuaranteedValueEvent {
 
   protected var tagPath: Option[TagPath] = None
   protected var inFragments = false
 
   abstract override def onHeader(part: DicomHeader): List[DicomPart] = {
     tagPath = tagPath.map {
-      case t: TagPathTag => t.previous.map(_.thenTag(part.tag)).getOrElse(TagPath.fromTag(part.tag))
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected attribute ${tagToString(part.tag)} in tag path $t.")
       case s: TagPathSequence => s.thenTag(part.tag)
     }.orElse(Some(TagPath.fromTag(part.tag)))
     super.onHeader(part)
@@ -227,7 +228,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
 
   abstract override def onSequenceStart(part: DicomSequence): List[DicomPart] = {
     tagPath = tagPath.map {
-      case t: TagPathTag => t.previous.map(_.thenSequence(part.tag)).getOrElse(TagPath.fromSequence(part.tag))
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected sequence ${tagToString(part.tag)} in tag path $t.")
       case s: TagPathSequence => s.thenSequence(part.tag)
     }.orElse(Some(TagPath.fromSequence(part.tag)))
     super.onSequenceStart(part)
@@ -235,7 +236,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
 
   abstract override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] = {
     tagPath = tagPath.flatMap {
-      case t: TagPathTag => t.previous.flatMap(_.previous)
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected end of sequence in tag path $t.")
       case s: TagPathSequence => s.previous
     }
     super.onSequenceEnd(part)
@@ -244,7 +245,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
   abstract override def onFragmentsStart(part: DicomFragments): List[DicomPart] = {
     inFragments = true
     tagPath = tagPath.map {
-      case t: TagPathTag => t.previous.map(_.thenTag(part.tag)).getOrElse(TagPath.fromTag(part.tag))
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected fragments ${tagToString(part.tag)} in tag path $t.")
       case s: TagPathSequence => s.thenTag(part.tag)
     }.orElse(Some(TagPath.fromTag(part.tag)))
     super.onFragmentsStart(part)
@@ -254,26 +255,22 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents {
     inFragments = false
     tagPath = tagPath.flatMap {
       case t: TagPathTag => t.previous.flatMap(_.previous)
-      case s: TagPathSequence => s.previous
+      case s: TagPathSequence => throw new DicomStreamException(s"Unexpected end of fragments in tag path $s.")
     }
     super.onFragmentsEnd(part)
   }
 
   abstract override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] = {
     tagPath = tagPath.map {
-      case t: TagPathTag => t.previous
-        .map(s => s.previous.map(_.thenSequence(s.tag, part.index)).getOrElse(TagPath.fromSequence(s.tag, part.index)))
-        .getOrElse(t)
-      case s: TagPathSequence => s.previous
-        .map(_.thenSequence(s.tag, part.index))
-        .getOrElse(TagPath.fromSequence(s.tag, part.index))
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected item with index ${part.index} in tag path $t.")
+      case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag, part.index)).getOrElse(TagPath.fromSequence(s.tag, part.index))
     }
     super.onSequenceItemStart(part)
   }
 
   abstract override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = {
     tagPath = tagPath.flatMap {
-      case t: TagPathTag => t.previous.map(s => s.previous.map(_.thenSequence(s.tag)).getOrElse(TagPath.fromSequence(s.tag)))
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected end of fragments in tag path $t.")
       case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag)).orElse(Some(TagPath.fromSequence(s.tag)))
     }
     super.onSequenceItemEnd(part)
