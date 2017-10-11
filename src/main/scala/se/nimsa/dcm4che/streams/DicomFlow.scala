@@ -207,7 +207,7 @@ trait GuaranteedDelimitationEvents extends DicomFlow {
   * This implementation contains state (the current tag path). The corresponding flow must therefore be created anew for
   * each stream.
   */
-trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents with GuaranteedValueEvent {
+trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with GuaranteedDelimitationEvents {
 
   protected var tagPath: Option[TagPath] = None
   protected var inFragments = false

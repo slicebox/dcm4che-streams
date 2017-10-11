@@ -449,19 +449,4 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
-
-  it should "read MR file" in {
-    import scala.concurrent.duration.DurationInt
-
-    val imageInformationTags = Seq(Tag.InstanceNumber, Tag.ImageIndex, Tag.NumberOfFrames, Tag.SmallestImagePixelValue, Tag.LargestImagePixelValue).sorted
-
-    val file = new File(getClass.getResource("test.dcm").toURI)
-    val source = FileIO.fromPath(file.toPath)
-      .via(partFlow)
-      .via(DicomFlows.tagFilter(_ => true)(tagPath => imageInformationTags.contains(tagPath.tag)))
-      .via(DicomFlows.printFlow)
-
-    val f = source.runWith(Sink.ignore)
-    Await.ready(f, 30.seconds)
-  }
 }
