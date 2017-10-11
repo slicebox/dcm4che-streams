@@ -270,7 +270,7 @@ trait TagPathTracking extends DicomFlow with GuaranteedDelimitationEvents with G
 
   abstract override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = {
     tagPath = tagPath.flatMap {
-      case t: TagPathTag => throw new DicomStreamException(s"Unexpected end of fragments in tag path $t.")
+      case t: TagPathTag => throw new DicomStreamException(s"Unexpected end of item in tag path $t.")
       case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag)).orElse(Some(TagPath.fromSequence(s.tag)))
     }
     super.onSequenceItemEnd(part)

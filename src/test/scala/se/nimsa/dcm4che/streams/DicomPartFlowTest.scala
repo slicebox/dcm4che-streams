@@ -1,15 +1,18 @@
 package se.nimsa.dcm4che.streams
 
+import java.io.File
+
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{FileIO, Sink, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
+import se.nimsa.dcm4che.streams.DicomPartFlow.partFlow
 
-import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.{Await, ExecutionContextExecutor}
 
 class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
@@ -445,5 +448,20 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectValueChunk(4)
       .expectFragmentsDelimitation()
       .expectDicomComplete()
+  }
+
+  it should "read MR file" in {
+    import scala.concurrent.duration.DurationInt
+
+    val imageInformationTags = Seq(Tag.InstanceNumber, Tag.ImageIndex, Tag.NumberOfFrames, Tag.SmallestImagePixelValue, Tag.LargestImagePixelValue).sorted
+
+    val file = new File(getClass.getResource("test.dcm").toURI)
+    val source = FileIO.fromPath(file.toPath)
+      .via(partFlow)
+      .via(DicomFlows.tagFilter(_ => true)(tagPath => imageInformationTags.contains(tagPath.tag)))
+      .via(DicomFlows.printFlow)
+
+    val f = source.runWith(Sink.ignore)
+    Await.ready(f, 30.seconds)
   }
 }

@@ -187,21 +187,20 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
   it should "handle empty attributes in sequences" in {
     val bytes =
-      sequence(Tag.DerivationCodeSequence, 52) ++ item(44) ++ emptyPatientName ++
-        sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ patientNameJohnDoe
+      sequence(Tag.DerivationCodeSequence, 44) ++ item(36) ++ emptyPatientName ++
+        sequence(Tag.DerivationCodeSequence, 16) ++ item(8) ++ emptyPatientName
 
     val source = Source.single(bytes)
       .via(partFlow)
       .via(guaranteedDelimitationFlow())
 
     source.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence, 52)
-      .expectItem(1, 44)
+      .expectSequence(Tag.DerivationCodeSequence, 44)
+      .expectItem(1, 36)
       .expectHeader(Tag.PatientName)
-      .expectSequence(Tag.DerivationCodeSequence, 24)
-      .expectItem(1, 16)
+      .expectSequence(Tag.DerivationCodeSequence, 16)
+      .expectItem(1, 8)
       .expectHeader(Tag.PatientName)
-      .expectValueChunk(8)
       .expectItemDelimitation()
       .expectSequenceDelimitation()
       .expectItemDelimitation()
