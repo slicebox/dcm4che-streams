@@ -61,7 +61,7 @@ abstract class DicomFlow {
   * this trait is most often included as the first mixin to provide basic behavior which is then overridden for the
   * appropriate events.
   */
-trait JustEmit extends DicomFlow {
+class IdentityFlow extends DicomFlow {
   def onPreamble(part: DicomPreamble): List[DicomPart] = part :: Nil
   def onHeader(part: DicomHeader): List[DicomPart] = part :: Nil
   def onValueChunk(part: DicomValueChunk): List[DicomPart] = part :: Nil
@@ -78,11 +78,11 @@ trait JustEmit extends DicomFlow {
 }
 
 /**
-  * Similar implementation to `JustEmit` with the difference that all events forward to the `onPart` event. Useful for
+  * Similar implementation to `IdentityFlow` with the difference that all events forward to the `onPart` event. Useful for
   * simple filters which implement a common behavior for all DICOM parts. This implementation is then provided in the
   * `onPart` method.
   */
-trait TreatAsPart extends DicomFlow {
+abstract class PartFlow extends DicomFlow {
   def onPreamble(part: DicomPreamble): List[DicomPart] = onPart(part)
   def onHeader(part: DicomHeader): List[DicomPart] = onPart(part)
   def onValueChunk(part: DicomValueChunk): List[DicomPart] = onPart(part)

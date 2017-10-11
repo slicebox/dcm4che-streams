@@ -142,7 +142,7 @@ object DicomFlows {
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking {
+    DicomFlowFactory.create(new PartFlow with TagPathTracking {
 
       var keeping = false
 
@@ -302,7 +302,7 @@ object DicomFlows {
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
   def collectAttributesFlow(tagCondition: TagPath => Boolean, stopCondition: TagPath => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking with EndEvent {
+    DicomFlowFactory.create(new PartFlow with TagPathTracking with EndEvent {
 
       var reachedEnd = false
       var currentBufferSize = 0
@@ -484,7 +484,7 @@ object DicomFlows {
     */
   def forceIndeterminateLengthSequences(): Flow[DicomPart, DicomPart, NotUsed] =
     guaranteedDelimitationFlow()
-      .via(DicomFlowFactory.create(new DicomFlow with JustEmit { // map to indeterminate length
+      .via(DicomFlowFactory.create(new IdentityFlow { // map to indeterminate length
         val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
         val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
 
@@ -509,7 +509,7 @@ object DicomFlows {
     * empty `DicomValueChunk`s are of the subtype `DicomValueChunkMarker`.
     */
   val guaranteedValueFlow: Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
+    DicomFlowFactory.create(new IdentityFlow with GuaranteedValueEvent {
       override def onValueChunk(part: DicomValueChunk): List[DicomPart] = part :: Nil
     })
 
@@ -522,7 +522,7 @@ object DicomFlows {
     * @return the associated flow
     */
   def guaranteedDelimitationFlow(): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
+    DicomFlowFactory.create(new IdentityFlow with GuaranteedDelimitationEvents {
       override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
         part match {
           case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)

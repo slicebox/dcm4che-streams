@@ -78,7 +78,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedDelimitationEvents {
+      .via(DicomFlowFactory.create(new IdentityFlow with GuaranteedDelimitationEvents {
         override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = {
           part.bytes.length shouldBe expectedDelimitationLengths.head
           expectedDelimitationLengths = expectedDelimitationLengths.tail
@@ -215,7 +215,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with JustEmit with GuaranteedValueEvent {
+      .via(DicomFlowFactory.create(new IdentityFlow with GuaranteedValueEvent {
         override def onValueChunk(part: DicomValueChunk): List[DicomPart] = {
           part.bytes.length shouldBe expectedChunkLengths.head
           expectedChunkLengths = expectedChunkLengths.tail
@@ -246,7 +246,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
   }
 
   def endEventTestFlow(): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DicomFlow with JustEmit with EndEvent {
+    DicomFlowFactory.create(new IdentityFlow with EndEvent {
       override def onEnd(): List[DicomPart] = DicomEndMarker :: Nil
     })
 
@@ -307,7 +307,7 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     val source = Source.single(bytes)
       .via(partFlow)
-      .via(DicomFlowFactory.create(new DicomFlow with TreatAsPart with TagPathTracking {
+      .via(DicomFlowFactory.create(new PartFlow with TagPathTracking {
         override def onPart(part: DicomPart): List[DicomPart] = {
           check(tagPath)
           part :: Nil
