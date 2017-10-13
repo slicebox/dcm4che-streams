@@ -63,13 +63,13 @@ object DicomAttributesSink {
   }
 
   /**
-    * Creates a <code>Sink</code> which ingests DICOM parts as output by the <code>DicomPartFlow</code> followed by the
+    * Creates a <code>Sink</code> which ingests DICOM parts as output by the <code>DicomParseFlow</code> followed by the
     * <code>DicomFlows.attributeFlow</code> and materializes into two dcm4che <code>Attributes</code> objects, one for
     * meta data and one for the dataset.
     *
     * Based heavily and exclusively on the dcm4che
     * <a href="https://github.com/dcm4che/dcm4che/blob/master/dcm4che-core/src/main/java/org/dcm4che3/io/DicomInputStream.java">DicomInputStream</a>
-    * class (complementing what is not covered by <code>DicomPartFlow</code>.
+    * class (complementing what is not covered by <code>DicomParseFlow</code>.
     *
     * @param ec an implicit ExecutionContext
     * @return a <code>Sink</code> for materializing a flow of DICOM parts into dcm4che <code>Attribute</code>s.

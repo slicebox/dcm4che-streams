@@ -36,10 +36,9 @@ object DicomFlows {
   /**
     * Print each element and then pass it on unchanged.
     *
-    * @tparam A the type of elements in the flow
     * @return the associated flow
     */
-  def printFlow[A]: Flow[A, A, NotUsed] = Flow.fromFunction { a =>
+  val printFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow.fromFunction { a =>
     println(a)
     a
   }
@@ -117,7 +116,7 @@ object DicomFlows {
     *
     * @return the associated filter Flow
     */
-  def groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
+  val groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
     tagFilter(_ => true)(tagPath => !DicomParsing.isGroupLength(tagPath.tag) || DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
@@ -125,7 +124,7 @@ object DicomFlows {
     *
     * @return the associated filter Flow
     */
-  def fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
+  val fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
     tagFilter(_ => false)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
@@ -142,7 +141,7 @@ object DicomFlows {
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new PartFlow with TagPathTracking {
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with StartEvent {
 
       var keeping = false
 
@@ -174,6 +173,10 @@ object DicomFlows {
           case p => updateThenEmit(p)
         }
 
+      override def onStart(): List[DicomPart] = {
+        keeping = false
+        super.onStart()
+      }
     })
 
   /**
@@ -191,14 +194,14 @@ object DicomFlows {
     Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 
   /**
-    * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in DicomPartFlow
-    * has inflated a deflated (1.2.840.10008.1.2.1.99 or 1.2.840.10008.1.2.4.95) file, and analyzed and possibly transformed its
+    * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in `DicomParseFlow`
+    * has inflated a deflated (`1.2.840.10008.1.2.1.99 or 1.2.840.10008.1.2.4.95`) file, and analyzed and possibly transformed its
     * attributes. At that stage, in order to maintain valid DICOM information, one can either change the transfer syntax to
     * an appropriate value for non-deflated data, or deflate the data again. This flow helps with the latter.
     *
-    * @return the associated DicomPart Flow
+    * @return the associated `DicomPart` `Flow`
     */
-  def deflateDatasetFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+  val deflateDatasetFlow: Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .concat(Source.single(DicomEndMarker))
       .statefulMapConcat {
@@ -302,7 +305,7 @@ object DicomFlows {
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
   def collectAttributesFlow(tagCondition: TagPath => Boolean, stopCondition: TagPath => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new PartFlow with TagPathTracking with EndEvent {
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with StartEvent with EndEvent {
 
       var reachedEnd = false
       var currentBufferSize = 0
@@ -318,6 +321,15 @@ object DicomFlows {
         currentBufferSize = 0
 
         parts
+      }
+
+      override def onStart(): List[DicomPart] = {
+        reachedEnd = false
+        currentBufferSize = 0
+        currentAttribute = None
+        buffer = Nil
+        attributes = Nil
+        super.onStart()
       }
 
       override def onEnd(): List[DicomPart] =
@@ -433,10 +445,10 @@ object DicomFlows {
     * Buffers all file meta information attributes and calculates their lengths, then emits the correct file meta
     * information group length attribute followed by remaining FMI.
     */
-  def fmiGroupLengthFlow(): Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
-    .concat(Source.single(DicomEndMarker))
+  val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
     .via(collectAttributesFlow(tagPath => tagPath.isRoot && DicomParsing.isFileMetaInformation(tagPath.tag), tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), 1000000))
     .via(tagFilter(_ => true)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag)))
+    .concat(Source.single(DicomEndMarker))
     .statefulMapConcat {
 
       () =>
@@ -476,29 +488,6 @@ object DicomFlows {
     }
 
   /**
-    * Sets any sequences and/or items with determinate length to indeterminate length (length = -1) and inserts
-    * delimiters.
-    *
-    * Most flows dealing with sequences require this filter to function as intended, see the corresponding flow
-    * documentation.
-    */
-  def forceIndeterminateLengthSequences(): Flow[DicomPart, DicomPart, NotUsed] =
-    guaranteedDelimitationFlow()
-      .via(DicomFlowFactory.create(new IdentityFlow { // map to indeterminate length
-        val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
-        val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
-
-        override def onSequenceStart(part: DicomSequence): List[DicomPart] =
-          super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
-        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
-          super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
-        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
-          super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
-        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
-          super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
-      }))
-
-  /**
     * Remove all DICOM parts that do not contribute to file bytes
     */
   val syntheticPartsFilter: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart].filter(_.bytes.nonEmpty)
@@ -521,7 +510,7 @@ object DicomFlows {
     *
     * @return the associated flow
     */
-  def guaranteedDelimitationFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+  val guaranteedDelimitationFlow: Flow[DicomPart, DicomPart, NotUsed] =
     DicomFlowFactory.create(new IdentityFlow with GuaranteedDelimitationEvents {
       override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
         part match {
@@ -535,7 +524,25 @@ object DicomFlows {
         }
     })
 
+  /**
+    * Sets any sequences and/or items with known length to undefined length (length = -1) and inserts
+    * delimiters.
+    */
+  val toUndefinedLengthSequences: Flow[DicomPart, DicomPart, NotUsed] =
+    guaranteedDelimitationFlow
+      .via(DicomFlowFactory.create(new IdentityFlow { // map to indeterminate length
+        val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
+        val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
 
+        override def onSequenceStart(part: DicomSequence): List[DicomPart] =
+          super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+          super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
+        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
+          super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+          super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
+      }))
 }
 
 

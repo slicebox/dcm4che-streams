@@ -148,6 +148,11 @@ object DicomParts {
     def asDicomParts: Seq[DicomPart] = header +: valueChunks
   }
 
+  case object DicomStartMarker extends DicomPart {
+    def bigEndian: Boolean = false
+    def bytes: ByteString = ByteString.empty
+  }
+
   case object DicomEndMarker extends DicomPart {
     def bigEndian: Boolean = false
     def bytes: ByteString = ByteString.empty

@@ -26,7 +26,7 @@ import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomParts._
 
 /**
-  * Flow which ingests a stream of bytes and outputs a stream of DICOM file parts such as specified by the <code>DicomPart</code>
+  * Flow which ingests a stream of bytes and outputs a stream of DICOM data parts as specified by the <code>DicomPart</code>
   * trait. Example DICOM parts are the preamble, headers (tag, VR, length), value chunks (the data in an attribute divided into chunks),
   * items, sequences and fragments.
   *
@@ -38,7 +38,7 @@ import se.nimsa.dcm4che.streams.DicomParts._
   * @param stopTag   optional stop tag (exclusive) after which reading of incoming data bytes is stopped
   * @param inflate   indicates whether deflated DICOM data should be deflated and parsed or passed on as deflated data chunks.
   */
-class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate: Boolean = true) extends ByteStringParser[DicomPart] with DicomParsing {
+class DicomParseFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate: Boolean = true) extends ByteStringParser[DicomPart] with DicomParsing {
 
   import ByteStringParser._
 
@@ -287,7 +287,7 @@ class DicomPartFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate:
 
 }
 
-object DicomPartFlow {
+object DicomParseFlow {
 
-  val partFlow = new DicomPartFlow()
+  val parseFlow = new DicomParseFlow()
 }

@@ -43,7 +43,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
 
   def toFlowAttributes(bytes: ByteString): Future[(Option[Attributes], Option[Attributes])] =
     Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(attributeFlow)
       .runWith(attributesSink)
 
@@ -92,7 +92,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
     val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(studyDate ++ patientNameJohnDoe)
 
     val futureFlowAttributes = Source.single(bytes)
-      .via(new DicomPartFlow(inflate = false))
+      .via(new DicomParseFlow(inflate = false))
       .via(attributeFlow)
       .runWith(attributesSink)
 

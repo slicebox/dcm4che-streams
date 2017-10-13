@@ -57,7 +57,7 @@ object DicomModifyFlow {
     * @return the modified flow of DICOM parts
     */
   def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new PartFlow with EndEvent with TagPathTracking {
+    DicomFlowFactory.create(new DeferToPartFlow with EndEvent with TagPathTracking {
 
       val sortedModifications: List[TagModification] = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 

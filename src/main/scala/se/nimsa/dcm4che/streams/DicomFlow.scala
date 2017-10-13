@@ -82,7 +82,7 @@ class IdentityFlow extends DicomFlow {
   * simple filters which implement a common behavior for all DICOM parts. This implementation is then provided in the
   * `onPart` method.
   */
-abstract class PartFlow extends DicomFlow {
+abstract class DeferToPartFlow extends DicomFlow {
   def onPreamble(part: DicomPreamble): List[DicomPart] = onPart(part)
   def onHeader(part: DicomHeader): List[DicomPart] = onPart(part)
   def onValueChunk(part: DicomValueChunk): List[DicomPart] = onPart(part)
@@ -96,6 +96,21 @@ abstract class PartFlow extends DicomFlow {
   def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] = onPart(part)
   def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = onPart(part)
   def onPart(part: DicomPart): List[DicomPart]
+}
+
+/**
+  * This mixin adds an event marking the start of the DICOM stream. It does not add DICOM parts to the stream.
+  */
+trait StartEvent extends DicomFlow {
+  def onStart(): List[DicomPart] = Nil
+
+  override def baseFlow: Flow[DicomPart, DicomPart, NotUsed] =
+    super.baseFlow.prepend(Source.single(DicomStartMarker)) // add marker to start of stream
+
+  override def handlePart(dicomPart: DicomPart): List[DicomPart] = dicomPart match {
+    case DicomStartMarker => onStart() // call event, do not emit marker
+    case part => super.handlePart(part)
+  }
 }
 
 /**
@@ -140,11 +155,8 @@ class DicomSequenceItemDelimitationMarker(item: Int) extends DicomSequenceItemDe
   * as is the case with sequences and items with indeterminate length and which are concluded by delimitation parts. This
   * makes it easier to create DICOM flows that react to the beginning and ending of sequences and items, as no special
   * care has to be taken for DICOM data with determinate length sequences and items.
-  *
-  * This implementation contains state (the number of bytes left to read in a sequence/item). The corresponding flow
-  * must therefore be created anew for each stream.
   */
-trait GuaranteedDelimitationEvents extends DicomFlow {
+trait GuaranteedDelimitationEvents extends DicomFlow with StartEvent {
   var partStack: List[(LengthPart, Long)] = Nil
 
   def subtractLength(part: DicomPart): List[(LengthPart, Long)] =
@@ -197,17 +209,22 @@ trait GuaranteedDelimitationEvents extends DicomFlow {
   abstract override def onFragmentsStart(part: DicomFragments): List[DicomPart] = subtractAndEmit(part, super.onFragmentsStart)
   abstract override def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = subtractAndEmit(part, super.onFragmentsItemStart)
   abstract override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = subtractAndEmit(part, super.onFragmentsEnd)
+
+  /**
+    * Reset state
+    */
+  override def onStart(): List[DicomPart] = {
+    partStack = Nil
+    super.onStart()
+  }
 }
 
 /**
   * This mixin keeps track of the current tag path as the stream moves through attributes, sequences and fragments. The
   * tag path state is updated in the event callbacks. This means that implementations of events using this mixin must
   * remember to call the corresponding super method for the tag path to update.
-  *
-  * This implementation contains state (the current tag path). The corresponding flow must therefore be created anew for
-  * each stream.
   */
-trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with GuaranteedDelimitationEvents {
+trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with GuaranteedDelimitationEvents with StartEvent {
 
   protected var tagPath: Option[TagPath] = None
   protected var inFragments = false
@@ -274,6 +291,15 @@ trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with Guarantee
       case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag)).orElse(Some(TagPath.fromSequence(s.tag)))
     }
     super.onSequenceItemEnd(part)
+  }
+
+  /**
+    * Reset state
+    */
+  override def onStart(): List[DicomPart] = {
+    tagPath = None
+    inFragments = false
+    super.onStart()
   }
 }
 
