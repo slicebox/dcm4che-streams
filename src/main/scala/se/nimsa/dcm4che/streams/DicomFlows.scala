@@ -172,11 +172,6 @@ object DicomFlows {
           case p: DicomFragmentsDelimitation => emitThenUpdate(p)
           case p => updateThenEmit(p)
         }
-
-      override def onStart(): List[DicomPart] = {
-        keeping = false
-        super.onStart()
-      }
     })
 
   /**
@@ -321,15 +316,6 @@ object DicomFlows {
         currentBufferSize = 0
 
         parts
-      }
-
-      override def onStart(): List[DicomPart] = {
-        reachedEnd = false
-        currentBufferSize = 0
-        currentAttribute = None
-        buffer = Nil
-        attributes = Nil
-        super.onStart()
       }
 
       override def onEnd(): List[DicomPart] =

@@ -156,7 +156,7 @@ class DicomSequenceItemDelimitationMarker(item: Int) extends DicomSequenceItemDe
   * makes it easier to create DICOM flows that react to the beginning and ending of sequences and items, as no special
   * care has to be taken for DICOM data with determinate length sequences and items.
   */
-trait GuaranteedDelimitationEvents extends DicomFlow with StartEvent {
+trait GuaranteedDelimitationEvents extends DicomFlow {
   var partStack: List[(LengthPart, Long)] = Nil
 
   def subtractLength(part: DicomPart): List[(LengthPart, Long)] =
@@ -209,14 +209,6 @@ trait GuaranteedDelimitationEvents extends DicomFlow with StartEvent {
   abstract override def onFragmentsStart(part: DicomFragments): List[DicomPart] = subtractAndEmit(part, super.onFragmentsStart)
   abstract override def onFragmentsItemStart(part: DicomFragmentsItem): List[DicomPart] = subtractAndEmit(part, super.onFragmentsItemStart)
   abstract override def onFragmentsEnd(part: DicomFragmentsDelimitation): List[DicomPart] = subtractAndEmit(part, super.onFragmentsEnd)
-
-  /**
-    * Reset state
-    */
-  override def onStart(): List[DicomPart] = {
-    partStack = Nil
-    super.onStart()
-  }
 }
 
 /**
@@ -224,7 +216,7 @@ trait GuaranteedDelimitationEvents extends DicomFlow with StartEvent {
   * tag path state is updated in the event callbacks. This means that implementations of events using this mixin must
   * remember to call the corresponding super method for the tag path to update.
   */
-trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with GuaranteedDelimitationEvents with StartEvent {
+trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with GuaranteedDelimitationEvents {
 
   protected var tagPath: Option[TagPath] = None
   protected var inFragments = false
@@ -291,15 +283,6 @@ trait TagPathTracking extends DicomFlow with GuaranteedValueEvent with Guarantee
       case s: TagPathSequence => s.previous.map(_.thenSequence(s.tag)).orElse(Some(TagPath.fromSequence(s.tag)))
     }
     super.onSequenceItemEnd(part)
-  }
-
-  /**
-    * Reset state
-    */
-  override def onStart(): List[DicomPart] = {
-    tagPath = None
-    inFragments = false
-    super.onStart()
   }
 }
 

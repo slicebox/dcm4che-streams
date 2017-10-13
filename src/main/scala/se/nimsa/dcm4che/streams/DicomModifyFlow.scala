@@ -146,16 +146,6 @@ object DicomModifyFlow {
           .filter(_.tagPath.isRoot)
           .filter(m => latestTagPath.exists(_ < m.tagPath))
           .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
-
-      override def onStart(): List[DicomPart] = {
-        currentModification = None
-        currentHeader = None
-        latestTagPath = None
-        value = ByteString.empty
-        bigEndian = false
-        explicitVR = true
-        super.onStart()
-      }
     })
 
 }

@@ -208,32 +208,6 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectDicomComplete()
   }
 
-  it should "reset its internal state on repeated use" in {
-    val bytes1 = sequence(Tag.DerivationCodeSequence, 44) ++ item(36) ++ emptyPatientName
-    val bytes2 = sequence(Tag.DerivationCodeSequence, 16) ++ item(8) ++ emptyPatientName
-
-    val source1 = Source.single(bytes1)
-      .via(parseFlow)
-      .via(guaranteedDelimitationFlow)
-    val source2 = Source.single(bytes2)
-      .via(parseFlow)
-      .via(guaranteedDelimitationFlow)
-
-    source1.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence, 44)
-      .expectItem(1, 36)
-      .expectHeader(Tag.PatientName)
-      .expectDicomComplete()
-
-    source2.runWith(TestSink.probe[DicomPart])
-      .expectSequence(Tag.DerivationCodeSequence, 16)
-      .expectItem(1, 8)
-      .expectHeader(Tag.PatientName)
-      .expectItemDelimitation()
-      .expectSequenceDelimitation()
-      .expectDicomComplete()
-  }
-
   "The guaranteed value flow" should "call onValueChunk callback also after length zero headers" in {
     val bytes = patientNameJohnDoe ++ emptyPatientName
 
@@ -367,53 +341,11 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectNextN(23)
   }
 
-  it should "reset its internal state on repeated use" in {
-    val bytes1 = sequence(Tag.DerivationCodeSequence, 60) ++ item(52) ++ patientNameJohnDoe
-    val bytes2 = sequence(Tag.DerivationCodeSequence, 60) ++ item(52) ++ patientNameJohnDoe
-
-    var expectedPaths = List(
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.PatientName)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1).thenTag(Tag.PatientName)),
-      Some(TagPath.fromSequence(Tag.DerivationCodeSequence, 1))
-    )
-
-    def check(tagPath: Option[TagPath]): Unit = {
-      tagPath shouldBe expectedPaths.head
-      expectedPaths = expectedPaths.tail
-    }
-
-    val tagPathFlow = DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking {
-      override def onPart(part: DicomPart): List[DicomPart] = {
-        check(tagPath)
-        part :: Nil
-      }
-    })
-
-    val source1 = Source.single(bytes1)
-      .via(parseFlow)
-      .via(tagPathFlow)
-    val source2 = Source.single(bytes2)
-      .via(parseFlow)
-      .via(tagPathFlow)
-
-    source1.runWith(TestSink.probe[DicomPart])
-      .request(4)
-      .expectNextN(4)
-
-    source2.runWith(TestSink.probe[DicomPart])
-      .request(4)
-      .expectNextN(4)
-  }
-
-  it should "not support using the same tracking more than once within a flow" in {
+  it should "support using the same tracking more than once within a flow" in {
     val bytes = sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ patientNameJohnDoe
 
-    val flow = DicomFlowFactory.create(new IdentityFlow with TagPathTracking)
+    // must be def, not val
+    def flow = DicomFlowFactory.create(new IdentityFlow with TagPathTracking)
 
     val source = Source.single(bytes)
       .via(parseFlow)
@@ -422,7 +354,10 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence, 24)
-      .expectDicomError()
+      .expectItem(1, 16)
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
   }
 
   "The onStart event" should "be called for all combined flow stages" in {
