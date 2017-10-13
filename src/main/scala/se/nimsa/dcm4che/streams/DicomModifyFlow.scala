@@ -57,7 +57,7 @@ object DicomModifyFlow {
     * @return the modified flow of DICOM parts
     */
   def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DeferToPartFlow with EndEvent with TagPathTracking {
+    DicomFlowFactory.create(new DeferToPartFlow with StartEvent with EndEvent with TagPathTracking {
 
       val sortedModifications: List[TagModification] = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 
@@ -146,6 +146,16 @@ object DicomModifyFlow {
           .filter(_.tagPath.isRoot)
           .filter(m => latestTagPath.exists(_ < m.tagPath))
           .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
+
+      override def onStart(): List[DicomPart] = {
+        currentModification = None
+        currentHeader = None
+        latestTagPath = None
+        value = ByteString.empty
+        bigEndian = false
+        explicitVR = true
+        super.onStart()
+      }
     })
 
 }
