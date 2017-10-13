@@ -106,5 +106,5 @@ has `depth = 0`.
 ```
 In this example, we chose to use `DeferToPartFlow` as the core class and mixed in the `TagPathTracking` capability
 which gives access to a `tagPath: TagPath` variable at all times which is automatically updated as the flow progresses.
-Note that flows with internal state should use the `StartEvent` capability and reset its internal state in the `onStart` method to make
-sure that repeated use of the flow is independent of previous use.
+Note that flows with internal state should be defined as functions (`def`) rather than constants/variables `val`/`var`
+to avoid shared state within or between flows.
