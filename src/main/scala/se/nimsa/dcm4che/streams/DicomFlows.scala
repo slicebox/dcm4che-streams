@@ -116,7 +116,7 @@ object DicomFlows {
     *
     * @return the associated filter Flow
     */
-  val groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
+  def groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
     tagFilter(_ => true)(tagPath => !DicomParsing.isGroupLength(tagPath.tag) || DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
@@ -124,7 +124,7 @@ object DicomFlows {
     *
     * @return the associated filter Flow
     */
-  val fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
+  def fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
     tagFilter(_ => false)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
@@ -141,7 +141,7 @@ object DicomFlows {
     * @return the filtered flow
     */
   def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with StartEvent {
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking {
 
       var keeping = false
 
@@ -305,7 +305,7 @@ object DicomFlows {
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
   def collectAttributesFlow(tagCondition: TagPath => Boolean, stopCondition: TagPath => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with StartEvent with EndEvent {
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with EndEvent {
 
       var reachedEnd = false
       var currentBufferSize = 0
@@ -445,7 +445,7 @@ object DicomFlows {
     * Buffers all file meta information attributes and calculates their lengths, then emits the correct file meta
     * information group length attribute followed by remaining FMI.
     */
-  val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+  def fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
     .via(collectAttributesFlow(tagPath => tagPath.isRoot && DicomParsing.isFileMetaInformation(tagPath.tag), tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), 1000000))
     .via(tagFilter(_ => true)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag)))
     .concat(Source.single(DicomEndMarker))
@@ -510,7 +510,7 @@ object DicomFlows {
     *
     * @return the associated flow
     */
-  val guaranteedDelimitationFlow: Flow[DicomPart, DicomPart, NotUsed] =
+  def guaranteedDelimitationFlow: Flow[DicomPart, DicomPart, NotUsed] =
     DicomFlowFactory.create(new IdentityFlow with GuaranteedDelimitationEvents {
       override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
         part match {
@@ -528,7 +528,7 @@ object DicomFlows {
     * Sets any sequences and/or items with known length to undefined length (length = -1) and inserts
     * delimiters.
     */
-  val toUndefinedLengthSequences: Flow[DicomPart, DicomPart, NotUsed] =
+  def toUndefinedLengthSequences: Flow[DicomPart, DicomPart, NotUsed] =
     guaranteedDelimitationFlow
       .via(DicomFlowFactory.create(new IdentityFlow { // map to indeterminate length
         val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)

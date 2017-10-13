@@ -410,4 +410,84 @@ class DicomFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecL
       .expectNextN(4)
   }
 
+  it should "not support using the same tracking more than once within a flow" in {
+    val bytes = sequence(Tag.DerivationCodeSequence, 24) ++ item(16) ++ patientNameJohnDoe
+
+    val flow = DicomFlowFactory.create(new IdentityFlow with TagPathTracking)
+
+    val source = Source.single(bytes)
+      .via(parseFlow)
+      .via(flow)
+      .via(flow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectSequence(Tag.DerivationCodeSequence, 24)
+      .expectDicomError()
+  }
+
+  "The onStart event" should "be called for all combined flow stages" in {
+    def flow() = DicomFlowFactory.create(new DeferToPartFlow with StartEvent {
+      var state = 1
+      override def onStart(): List[DicomPart] = {
+        state = 0
+        super.onStart()
+      }
+      override def onPart(part: DicomPart): List[DicomPart] = {
+        state shouldBe 0
+        part :: Nil
+      }
+    })
+
+    val source = Source.single(DicomEndMarker).via(flow()).via(flow()).via(flow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .request(1)
+      .expectNextChainingPF {
+        case DicomEndMarker => true
+      }
+      .expectDicomComplete()
+  }
+
+  it should "be called once for flows with more than one capability using the onStart event" in {
+    val flow = DicomFlowFactory.create(new DeferToPartFlow with GuaranteedDelimitationEvents with StartEvent {
+      var nCalls = 0
+      override def onStart(): List[DicomPart] = {
+        nCalls += 1
+        super.onStart()
+      }
+      override def onPart(part: DicomPart): List[DicomPart] = {
+        nCalls shouldBe 1
+        part :: Nil
+      }
+    })
+
+    val source = Source.single(DicomEndMarker).via(flow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .request(1)
+      .expectNextChainingPF {
+        case DicomEndMarker => true
+      }
+      .expectDicomComplete()
+  }
+
+  "Prepending elements in combined flows" should "not insert everything at the beginning" in {
+    val source = Source.single(1)
+    val flow = Flow[Int].map(_ + 1).prepend(Source.single(0))
+
+    val combined = source.via(flow).via(flow) // 1 -> 0 2 -> 0 1 3
+
+    combined.runWith(TestSink.probe[Int])
+      .request(3)
+      .expectNextChainingPF {
+        case 0 => true
+      }
+      .expectNextChainingPF {
+        case 1 => true
+      }
+      .expectNextChainingPF {
+        case 3 => true
+      }
+      .expectComplete()
+  }
 }

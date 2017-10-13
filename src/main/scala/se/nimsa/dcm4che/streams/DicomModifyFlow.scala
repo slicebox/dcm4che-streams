@@ -57,7 +57,7 @@ object DicomModifyFlow {
     * @return the modified flow of DICOM parts
     */
   def modifyFlow(modifications: TagModification*): Flow[DicomPart, DicomPart, NotUsed] =
-    DicomFlowFactory.create(new DeferToPartFlow with StartEvent with EndEvent with TagPathTracking {
+    DicomFlowFactory.create(new DeferToPartFlow with EndEvent with TagPathTracking {
 
       val sortedModifications: List[TagModification] = modifications.toList.sortWith((a, b) => a.tagPath < b.tagPath)
 
@@ -65,7 +65,7 @@ object DicomModifyFlow {
       var currentHeader: Option[DicomHeader] = None // header of current attribute being modified
       var latestTagPath: Option[TagPath] = None // last seen new tag path
       var value: ByteString = ByteString.empty // value of current attribute being modified
-      var bigEndian = false // endinaness of current attribute
+      var bigEndian = false // endianness of current attribute
       var explicitVR = true // VR representation of current attribute
 
       def updateSyntax(header: DicomHeader): Unit = {
