@@ -36,10 +36,9 @@ object DicomFlows {
   /**
     * Print each element and then pass it on unchanged.
     *
-    * @tparam A the type of elements in the flow
     * @return the associated flow
     */
-  def printFlow[A]: Flow[A, A, NotUsed] = Flow.fromFunction { a =>
+  val printFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow.fromFunction { a =>
     println(a)
     a
   }
@@ -59,7 +58,7 @@ object DicomFlows {
       {
         case header: DicomHeader =>
           currentData = Some(DicomAttribute(header, Seq.empty))
-          Nil
+          if (header.length <= 0) currentData.get :: Nil else Nil
         case fragments: DicomFragments =>
           inFragments = true
           fragments :: Nil
@@ -67,9 +66,9 @@ object DicomFlows {
           currentFragment = None
           inFragments = false
           endFragments :: Nil
-        case item: DicomItem if inFragments =>
-          currentFragment = Some(DicomFragment(item.bigEndian, Seq.empty))
-          Nil
+        case fragmentsItem: DicomFragmentsItem =>
+          currentFragment = Some(DicomFragment(fragmentsItem.index, fragmentsItem.bigEndian, Seq.empty))
+          if (fragmentsItem.length <= 0) currentFragment.get :: Nil else Nil
         case valueChunk: DicomValueChunk if inFragments =>
           currentFragment = currentFragment.map(f => f.copy(valueChunks = f.valueChunks :+ valueChunk))
           if (valueChunk.last)
@@ -78,34 +77,35 @@ object DicomFlows {
             Nil
         case valueChunk: DicomValueChunk =>
           currentData = currentData.map(d => d.copy(valueChunks = d.valueChunks :+ valueChunk))
-          if (valueChunk.last)
-            currentData.map(_ :: Nil).getOrElse(Nil)
-          else
-            Nil
+          if (valueChunk.last) currentData.map(_ :: Nil).getOrElse(Nil) else Nil
         case part => part :: Nil
       }
     }
 
   /**
     * Filter a stream of dicom parts such that all attributes except those with tags in the white list are discarded.
+    * Only attributes in the root dataset are considered. All other parts such as preamble are discarded.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
     * @param tagsWhitelist list of tags to keep.
     * @return the associated filter Flow
     */
-  def whitelistFilter(tagsWhitelist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] = whitelistFilter(tagsWhitelist.contains _)
+  def whitelistFilter(tagsWhitelist: Set[Int]): Flow[DicomPart, DicomPart, NotUsed] =
+    tagFilter(_ => false)(currentPath => currentPath.isRoot && tagsWhitelist.contains(currentPath.tag))
 
   /**
-    * Filter a stream of dicom parts such that attributes with tags in the black list are discarded.
+    * Filter a stream of dicom parts such that attributes with tag paths in the black list are discarded. Tag paths in
+    * the blacklist are removed in the root dataset as well as any sequences, and entire sequences or items in sequences
+    * can be removed.
     *
     * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
     *
-    * @param tagsBlacklist list of tags to discard.
+    * @param blacklistPaths list of tag paths to discard.
     * @return the associated filter Flow
     */
-  def blacklistFilter(tagsBlacklist: Seq[Int]): Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter(tagsBlacklist.contains _)
+  def blacklistFilter(blacklistPaths: Set[TagPath]): Flow[DicomPart, DicomPart, NotUsed] =
+    tagFilter(_ => true)(currentPath => !blacklistPaths.exists(currentPath.startsWithSuperPath))
 
   /**
     * Filter a stream of dicom parts such that all attributes that are group length elements except
@@ -117,7 +117,7 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def groupLengthDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter((tag: Int) => DicomParsing.isGroupLength(tag) && !DicomParsing.isFileMetaInformation(tag))
+    tagFilter(_ => true)(tagPath => !DicomParsing.isGroupLength(tagPath.tag) || DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
     * Discards the file meta information.
@@ -125,98 +125,54 @@ object DicomFlows {
     * @return the associated filter Flow
     */
   def fmiDiscardFilter: Flow[DicomPart, DicomPart, NotUsed] =
-    blacklistFilter(DicomParsing.isFileMetaInformation, keepPreamble = false)
+    tagFilter(_ => false)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag))
 
   /**
-    * Blacklist filter for DICOM parts.
+    * Filter a stream of dicom parts leaving only those for which the supplied tag condition is `true`. As the stream of
+    * dicom parts is flowing, a `TagPath` state is updated. For each such update, the tag condition is evaluated. If it
+    * renders `false`, parts are discarded until it renders `true` again.
     *
-    * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
+    * Note that it is up to the user of this function to make sure the modified DICOM data is valid. When filtering
+    * items from a sequence, item indices are preserved (i.e. not updated).
     *
-    * @param tagCondition blacklist tag condition
-    * @param keepPreamble true if preamble should be kept, else false
-    * @return Flow of filtered parts
+    * @param tagCondition     function that determines if dicom parts should be discarded based on the current tag path
+    * @param defaultCondition determines whether to keep or discard elements with no tag path such as the preamble and
+    *                         synthetic dicom parts inserted to hold state.
+    * @return the filtered flow
     */
-  def blacklistFilter(tagCondition: Int => Boolean, keepPreamble: Boolean = true): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagCondition, isWhitelist = false, keepPreamble)
+  def tagFilter(defaultCondition: DicomPart => Boolean)(tagCondition: TagPath => Boolean): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking {
 
-  /**
-    * Tag based whitelist filter for DICOM parts.
-    *
-    * Note that it is up to the user of this function to make sure the modified DICOM data is valid.
-    *
-    * @param tagCondition whitelist condition
-    * @param keepPreamble true if preamble should be kept, else false
-    * @return Flow of filtered parts
-    */
-  def whitelistFilter(tagCondition: Int => Boolean, keepPreamble: Boolean = false): Flow[DicomPart, DicomPart, NotUsed] =
-    tagFilter(tagCondition, isWhitelist = true, keepPreamble)
+      var keeping = false
 
-
-  private def tagFilter(tagCondition: Int => Boolean, isWhitelist: Boolean, keepPreamble: Boolean): Flow[DicomPart, DicomPart, NotUsed] =
-    Flow[DicomPart]
-      .statefulMapConcat {
-        () =>
-          var discarding = false
-
-          def shouldDiscard(tag: Int, isWhitelist: Boolean) = {
-            if (isWhitelist) {
-              !tagCondition(tag) // Whitelist: condition true => keep
-            } else {
-              tagCondition(tag) // Blacklist: condition true => discard
-            }
-          }
-
-        {
-          case dicomPreamble: DicomPreamble =>
-            if (keepPreamble) {
-              dicomPreamble :: Nil
-            } else {
-              Nil
-            }
-
-          case dicomHeader: DicomHeader =>
-            discarding = shouldDiscard(dicomHeader.tag, isWhitelist)
-            if (discarding) {
-              Nil
-            } else {
-              dicomHeader :: Nil
-            }
-          case valueChunk: DicomValueChunk => if (discarding) Nil else valueChunk :: Nil
-          case fragment: DicomFragment => if (discarding) Nil else fragment :: Nil
-
-          case dicomFragments: DicomFragments =>
-            discarding = shouldDiscard(dicomFragments.tag, isWhitelist)
-            if (discarding) {
-              Nil
-            } else {
-              dicomFragments :: Nil
-            }
-
-          case _: DicomItem if discarding => Nil
-          case _: DicomItemDelimitation if discarding => Nil
-          case _: DicomFragmentsDelimitation if discarding => Nil
-
-          case _: DicomSequence if discarding => Nil
-          case _: DicomSequenceDelimitation if discarding => Nil
-
-          case dicomAttribute: DicomAttribute =>
-            discarding = shouldDiscard(dicomAttribute.header.tag, isWhitelist)
-            if (discarding) {
-              Nil
-            } else {
-              dicomAttribute :: Nil
-            }
-
-          case dicomPart =>
-            if (isWhitelist) {
-              Nil
-            } else {
-              discarding = false
-              dicomPart :: Nil
-            }
+      def update(part: DicomPart): Unit =
+        keeping = tagPath match {
+          case Some(path) => tagCondition(path)
+          case None => defaultCondition(part)
         }
+
+      def emit(part: DicomPart): List[DicomPart] = if (keeping) part :: Nil else Nil
+
+      def updateThenEmit(part: DicomPart): List[DicomPart] = {
+        update(part)
+        emit(part)
       }
 
+      def emitThenUpdate(part: DicomPart): List[DicomPart] = {
+        val items = emit(part)
+        update(part)
+        items
+      }
+
+      override def onPart(part: DicomPart): List[DicomPart] =
+        part match {
+          case p: DicomValueChunk => emitThenUpdate(p)
+          case p: DicomSequenceDelimitation => emitThenUpdate(p)
+          case p: DicomSequenceItemDelimitation => emitThenUpdate(p)
+          case p: DicomFragmentsDelimitation => emitThenUpdate(p)
+          case p => updateThenEmit(p)
+        }
+    })
 
   /**
     * A flow which passes on the input bytes unchanged, but fails for non-DICOM files, determined by the first
@@ -233,14 +189,14 @@ object DicomFlows {
     Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
 
   /**
-    * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in DicomPartFlow
-    * has inflated a deflated (1.2.840.10008.1.2.1.99 or 1.2.840.10008.1.2.4.95) file, and analyzed and possibly transformed its
+    * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in `DicomParseFlow`
+    * has inflated a deflated (`1.2.840.10008.1.2.1.99 or 1.2.840.10008.1.2.4.95`) file, and analyzed and possibly transformed its
     * attributes. At that stage, in order to maintain valid DICOM information, one can either change the transfer syntax to
     * an appropriate value for non-deflated data, or deflate the data again. This flow helps with the latter.
     *
-    * @return the associated DicomPart Flow
+    * @return the associated `DicomPart` `Flow`
     */
-  def deflateDatasetFlow(): Flow[DicomPart, DicomPart, NotUsed] =
+  val deflateDatasetFlow: Flow[DicomPart, DicomPart, NotUsed] =
     Flow[DicomPart]
       .concat(Source.single(DicomEndMarker))
       .statefulMapConcat {
@@ -319,8 +275,11 @@ object DicomFlows {
     */
   def collectAttributesFlow(tags: Set[Int], maxBufferSize: Int = 1000000): Flow[DicomPart, DicomPart, NotUsed] = {
     val maxTag = if (tags.isEmpty) 0 else tags.max
-    val tagCondition = tags.contains _
-    val stopCondition = if (tags.isEmpty) (_: Int) => true else (tag: Int) => tag > maxTag
+    val tagCondition = (tagPath: TagPath) => tagPath.isRoot && tags.contains(tagPath.tag)
+    val stopCondition = if (tags.isEmpty)
+      (_: TagPath) => true
+    else
+      (tagPath: TagPath) => tagPath.isRoot && tagPath.tag > maxTag
     collectAttributesFlow(tagCondition, stopCondition, maxBufferSize)
   }
 
@@ -340,77 +299,79 @@ object DicomFlows {
     *                      if this limit is exceed. Set to 0 for an unlimited buffer size
     * @return A DicomPart Flow which will begin with a DicomAttributesPart followed by the input elements
     */
-  def collectAttributesFlow(tagCondition: Int => Boolean, stopCondition: Int => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
-    Flow[DicomPart]
-      .concat(Source.single(DicomEndMarker))
-      .statefulMapConcat {
-        () =>
-          var reachedEnd = false
-          var currentBufferSize = 0
-          var currentAttribute: Option[DicomAttribute] = None
-          var buffer: List[DicomPart] = Nil
-          var attributes: List[DicomAttribute] = Nil
+  def collectAttributesFlow(tagCondition: TagPath => Boolean, stopCondition: TagPath => Boolean, maxBufferSize: Int): Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new DeferToPartFlow with TagPathTracking with EndEvent {
 
-          def attributesAndBuffer() = {
-            val parts = DicomAttributes(attributes) :: buffer
+      var reachedEnd = false
+      var currentBufferSize = 0
+      var currentAttribute: Option[DicomAttribute] = None
+      var buffer: List[DicomPart] = Nil
+      var attributes: List[DicomAttribute] = Nil
 
-            reachedEnd = true
-            buffer = Nil
-            currentBufferSize = 0
+      def attributesAndBuffer(): List[DicomPart] = {
+        val parts = DicomAttributes(attributes) :: buffer
 
-            parts
+        reachedEnd = true
+        buffer = Nil
+        currentBufferSize = 0
+
+        parts
+      }
+
+      override def onEnd(): List[DicomPart] =
+        if (reachedEnd)
+          Nil
+        else
+          attributesAndBuffer()
+
+      override def onPart(part: DicomPart): List[DicomPart] = {
+        if (reachedEnd)
+          part :: Nil
+        else {
+          if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
+            throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
           }
 
-        {
-          case DicomEndMarker if reachedEnd =>
-            Nil
+          buffer = buffer :+ part
+          currentBufferSize = currentBufferSize + part.bytes.size
 
-          case DicomEndMarker =>
-            attributesAndBuffer()
+          part match {
+            case _: DicomHeader if tagPath.exists(stopCondition) =>
+              attributesAndBuffer()
 
-          case part if reachedEnd =>
-            part :: Nil
-
-          case part =>
-            if (maxBufferSize > 0 && currentBufferSize > maxBufferSize) {
-              throw new DicomStreamException("Error collecting attributes: max buffer size exceeded")
-            }
-
-            buffer = buffer :+ part
-            currentBufferSize = currentBufferSize + part.bytes.size
-
-            part match {
-              case header: DicomHeader if stopCondition(header.tag) =>
-                attributesAndBuffer()
-
-              case header: DicomHeader if tagCondition(header.tag) =>
-                currentAttribute = Some(DicomAttribute(header, Seq.empty))
-                Nil
-
-              case _: DicomHeader =>
+            case header: DicomHeader if tagPath.exists(tagCondition) =>
+              currentAttribute = Some(DicomAttribute(header, Seq.empty))
+              if (header.length == 0) {
+                attributes = attributes :+ currentAttribute.get
                 currentAttribute = None
-                Nil
+              }
+              Nil
 
-              case valueChunk: DicomValueChunk =>
+            case _: DicomHeader =>
+              currentAttribute = None
+              Nil
 
-                currentAttribute match {
-                  case Some(attribute) =>
-                    val updatedAttribute = attribute.copy(valueChunks = attribute.valueChunks :+ valueChunk)
-                    currentAttribute = Some(updatedAttribute)
-                    if (valueChunk.last) {
-                      attributes = attributes :+ updatedAttribute
-                      currentAttribute = None
-                      Nil
-                    } else
-                      Nil
+            case valueChunk: DicomValueChunk =>
 
-                  case None => Nil
-                }
+              currentAttribute match {
+                case Some(attribute) =>
+                  val updatedAttribute = attribute.copy(valueChunks = attribute.valueChunks :+ valueChunk)
+                  currentAttribute = Some(updatedAttribute)
+                  if (valueChunk.last) {
+                    attributes = attributes :+ updatedAttribute
+                    currentAttribute = None
+                  }
+                  Nil
 
-              case _ => Nil
-            }
+                case None => Nil
+              }
+
+            case _ => Nil
+          }
         }
       }
+    })
+
 
   /**
     * Remove attributes from stream that may contain large quantities of data (bulk data)
@@ -470,10 +431,10 @@ object DicomFlows {
     * Buffers all file meta information attributes and calculates their lengths, then emits the correct file meta
     * information group length attribute followed by remaining FMI.
     */
-  val fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+  def fmiGroupLengthFlow: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart]
+    .via(collectAttributesFlow(tagPath => tagPath.isRoot && DicomParsing.isFileMetaInformation(tagPath.tag), tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag), 1000000))
+    .via(tagFilter(_ => true)(tagPath => !DicomParsing.isFileMetaInformation(tagPath.tag)))
     .concat(Source.single(DicomEndMarker))
-    .via(collectAttributesFlow(DicomParsing.isFileMetaInformation, (tag: Int) => !DicomParsing.isFileMetaInformation(tag), 1000000))
-    .via(blacklistFilter(DicomParsing.isFileMetaInformation _))
     .statefulMapConcat {
 
       () =>
@@ -511,4 +472,63 @@ object DicomFlows {
         case part => part :: Nil
       }
     }
+
+  /**
+    * Remove all DICOM parts that do not contribute to file bytes
+    */
+  val syntheticPartsFilter: Flow[DicomPart, DicomPart, NotUsed] = Flow[DicomPart].filter(_.bytes.nonEmpty)
+
+  /**
+    * This flow guarantees that all `DicomHeader` parts are immediately followed by one or more `DicomValueChunk`s.
+    * Normally, an empty attribute consists of a `DicomHeader` only. To allow the flow to keep track of inserted parts,
+    * empty `DicomValueChunk`s are of the subtype `DicomValueChunkMarker`.
+    */
+  val guaranteedValueFlow: Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new IdentityFlow with GuaranteedValueEvent {
+      override def onValueChunk(part: DicomValueChunk): List[DicomPart] = part :: Nil
+    })
+
+  /**
+    * This flow guarantees that the end of sequences are marked with a `DicomSequenceDelimitation` and that the end of
+    * items are marked with a `DicomSequenceItemDelimitation`. Normally, this is not the case for sequences and items
+    * with determinate length. To allow the flow to keep track of inserted parts downstream, inserted delimitations are
+    * of the subtypes `DicomSequenceDelimitationMarkser` and `DicomSequenceItemDelimitationMarker`.
+    *
+    * @return the associated flow
+    */
+  def guaranteedDelimitationFlow: Flow[DicomPart, DicomPart, NotUsed] =
+    DicomFlowFactory.create(new IdentityFlow with GuaranteedDelimitationEvents {
+      override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+        part match {
+          case m: DicomSequenceItemDelimitationMarker => m :: super.onSequenceItemEnd(m)
+          case p => super.onSequenceItemEnd(p)
+        }
+      override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+        part match {
+          case DicomSequenceDelimitationMarker => part :: super.onSequenceEnd(part)
+          case p => super.onSequenceEnd(p)
+        }
+    })
+
+  /**
+    * Sets any sequences and/or items with known length to undefined length (length = -1) and inserts
+    * delimiters.
+    */
+  def toUndefinedLengthSequences: Flow[DicomPart, DicomPart, NotUsed] =
+    guaranteedDelimitationFlow
+      .via(DicomFlowFactory.create(new IdentityFlow { // map to indeterminate length
+        val indeterminateBytes = ByteString(0xFF, 0xFF, 0xFF, 0xFF)
+        val zeroBytes = ByteString(0x00, 0x00, 0x00, 0x00)
+
+        override def onSequenceStart(part: DicomSequence): List[DicomPart] =
+          super.onSequenceStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceEnd(part: DicomSequenceDelimitation): List[DicomPart] =
+          super.onSequenceEnd(part.copy(bytes = tagToBytes(0xFFFEE0DD, part.bigEndian) ++ zeroBytes))
+        override def onSequenceItemStart(part: DicomSequenceItem): List[DicomPart] =
+          super.onSequenceItemStart(part.copy(length = -1, bytes = part.bytes.dropRight(4) ++ indeterminateBytes))
+        override def onSequenceItemEnd(part: DicomSequenceItemDelimitation): List[DicomPart] =
+          super.onSequenceItemEnd(part.copy(bytes = tagToBytes(0xFFFEE00D, part.bigEndian) ++ zeroBytes))
+      }))
 }
+
+

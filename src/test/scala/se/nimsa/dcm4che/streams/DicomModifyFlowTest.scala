@@ -24,31 +24,30 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   override def afterAll(): Unit = system.terminate()
 
   "The modify flow" should "modify the value of the specified attributes" in {
-    val bytes = patientNameJohnDoe ++ studyDate
+    val bytes = studyDate ++ patientNameJohnDoe
 
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
-        TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = false),
-        TagModification.contains(TagPath.fromTag(Tag.StudyDate), _ => ByteString.empty, insert = false)))
+        TagModification.contains(TagPath.fromTag(Tag.StudyDate), _ => ByteString.empty, insert = false),
+        TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = false)))
 
     source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate, VR.DA, 0)
       .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
       .expectValueChunk(mikeBytes)
-      .expectHeader(Tag.StudyDate, VR.DA, 0)
-      .expectValueChunk(ByteString.empty)
       .expectDicomComplete()
   }
 
   it should "not modify attributes in datasets other than the dataset the tag path points to" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ sequenceEnd
 
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = false)))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -67,7 +66,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -82,7 +81,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = studyDate
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => patientNameJohnDoe.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -93,11 +92,43 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectDicomComplete()
   }
 
+  it should "insert attributes if not present also at end of dataset when last attribute is empty" in {
+    val bytes = tagToBytesLE(0x00080050) ++ ByteString("SH") ++ shortToBytesLE(0x0000)
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+      .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.SOPInstanceUID), _ => ByteString("1.2.3.4 "), insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.SOPInstanceUID, VR.UI, 8)
+      .expectValueChunk(8)
+      .expectHeader(Tag.AccessionNumber, VR.SH, 0)
+      .expectDicomComplete()
+  }
+
+  it should "modify, not insert, when 'insert' attributes are already present" in {
+    val bytes = studyDate ++ patientNameJohnDoe
+
+    val mikeBytes = ByteString('M', 'i', 'k', 'e')
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+      .via(modifyFlow(
+        TagModification.contains(TagPath.fromTag(Tag.StudyDate), _ => ByteString.empty, insert = true),
+        TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = true)))
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate, VR.DA, 0)
+      .expectHeader(Tag.PatientName, VR.PN, mikeBytes.length)
+      .expectValueChunk(mikeBytes)
+      .expectDicomComplete()
+  }
+
   it should "insert all relevant attributes below the current tag number" in {
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromTag(Tag.SeriesDate), _ => studyDate.drop(8), insert = true),
         TagModification.contains(TagPath.fromTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
@@ -114,7 +145,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
 
   it should "not insert attributes if dataset contains no attributes" in {
     val source = Source.empty
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(TagModification.contains(TagPath.fromTag(Tag.SeriesDate), _ => studyDate.drop(8), insert = true)))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -122,10 +153,10 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   }
 
   it should "insert attributes in sequences if sequence is present but attribute is not present" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
 
@@ -145,7 +176,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
 
@@ -159,7 +190,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromTag(0x00200021), _ => ByteString(1, 2, 3, 4), insert = true)))
 
@@ -173,7 +204,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromTag(Tag.DerivationCodeSequence), _ => ByteString.empty, insert = true)))
 
@@ -185,7 +216,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.PatientName), _ => ByteString.empty, insert = true)))
 
@@ -196,10 +227,10 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   }
 
   it should "insert into the correct sequence item" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
 
@@ -220,12 +251,12 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   }
 
   it should "modify the correct sequence item" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence, 2).thenTag(Tag.PatientName), _ => mikeBytes, insert = false)))
 
@@ -244,10 +275,10 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   }
 
   it should "insert into all sequence items" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.StudyDate), _ => studyDate.drop(8), insert = true)))
 
@@ -269,12 +300,12 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectDicomComplete()
   }
   it should "modify all sequence items" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromSequence(Tag.DerivationCodeSequence).thenTag(Tag.PatientName), _ => mikeBytes, insert = false)))
 
@@ -298,7 +329,7 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
     val mikeBytes = ByteString('M', 'i', 'k', 'e')
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(
         TagModification.contains(TagPath.fromTag(Tag.PatientName), _ => mikeBytes, insert = true)))
 
@@ -316,12 +347,12 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
   }
 
   it should "work also with the endsWith modification matcher" in {
-    val bytes = studyDate ++ seqStart ++ itemNoLength ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ seqEnd
+    val bytes = studyDate ++ sequence(Tag.DerivationCodeSequence) ++ item ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
 
     val studyBytes = ByteString("2012-01-01")
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(modifyFlow(TagModification.endsWith(TagPath.fromTag(Tag.StudyDate), _ => studyBytes, insert = false)))
 
     source.runWith(TestSink.probe[DicomPart])
@@ -337,4 +368,5 @@ class DicomModifyFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Fla
       .expectSequenceDelimitation()
       .expectDicomComplete()
   }
+
 }

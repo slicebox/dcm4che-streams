@@ -3,6 +3,9 @@ version := "0.5-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.3"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
+scalacOptions in (Compile, doc) ++= Seq(
+  "-no-link-warnings" // Suppresses problems with Scaladoc @throws links
+)
 
 // repos
 
@@ -13,7 +16,7 @@ resolvers ++= Seq(
 // deps
 
 libraryDependencies ++= {
-  val akkaVersion = "2.5.4"
+  val akkaVersion = "2.5.6"
   Seq(
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,

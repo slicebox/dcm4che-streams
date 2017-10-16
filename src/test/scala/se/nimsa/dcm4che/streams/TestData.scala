@@ -1,59 +1,61 @@
 package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
+import org.dcm4che3.data.UID
 
 object TestData {
 
-  val preamble: ByteString = ByteString.fromArray(new Array[Byte](128)) ++ ByteString('D', 'I', 'C', 'M')
+  val pad0 = ByteString(0)
 
-  def fmiGroupLength(fmis: ByteString*): ByteString = ByteString(2, 0, 0, 0, 85, 76, 4, 0) ++ intToBytesLE(fmis.map(_.length).sum)
+  val preamble: ByteString = ByteString.fromArray(new Array[Byte](128)) ++ ByteString("DICM")
+
+  def fmiGroupLength(fmis: ByteString*): ByteString = tagToBytesLE(0x00020000) ++ ByteString("UL") ++ shortToBytesLE(0x0004) ++ intToBytesLE(fmis.map(_.length).sum)
 
   // File Meta Information Version
-  val fmiVersion = ByteString(2, 0, 1, 0, 79, 66, 0, 0, 2, 0, 0, 0, 0, 1)
+  val fmiVersion: ByteString = tagToBytesLE(0x00020001) ++ ByteString('O', 'B', 0x00, 0x00) ++ intToBytesLE(0x00000002) ++ ByteString(0x00, 0x01)
+  // (not conforming to standard)
+  val fmiVersionImplicitLE: ByteString = tagToBytesLE(0x00020001) ++ intToBytesLE(0x00000002) ++ ByteString(0x00, 0x01)
 
-  // Media Storage SOP Class UID
-  // x00020002          UI         26         1.2.840.10008.5.1.4.1.1.2 (CT)    0x0 (padding)
-  val mediaStorageSOPClassUID: ByteString = ByteString(2, 0, 2, 0, 85, 73, 26, 0) ++ ByteString.fromArray("1.2.840.10008.5.1.4.1.1.2".toCharArray.map(_.toByte)) ++ ByteString(0)
-  val sopClassUID: ByteString = ByteString(8, 0, 22, 0, 85, 73, 26, 0) ++ ByteString.fromArray("1.2.840.10008.5.1.4.1.1.2".toCharArray.map(_.toByte)) ++ ByteString(0)
+  val mediaStorageSOPClassUID: ByteString = tagToBytesLE(0x00020002) ++ ByteString("UI") ++ shortToBytesLE(0x001A) ++ ByteString(UID.CTImageStorage) ++ pad0
+  val sopClassUID: ByteString = tagToBytesLE(0x00080016) ++ ByteString("UI") ++ shortToBytesLE(0x001A) ++ ByteString(UID.CTImageStorage) ++ pad0
+  // (not conforming to standard)
+  val mediaStorageSOPClassUIDImplicitLE: ByteString = tagToBytesLE(0x00020002) ++ intToBytesLE(0x0000001A) ++ ByteString(UID.CTImageStorage) ++ pad0
+  val mediaStorageSOPInstanceUIDImplicitLE: ByteString = tagToBytesLE(0x00020003) ++ intToBytesLE(0x00000038) ++ ByteString("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735") ++ pad0
 
-  // (0008,0014) UI [1.2.840.113619.6.184]                   #  20, 1 InstanceCreatorUID
-  val instanceCreatorUID: ByteString = ByteString(8, 0, 20, 0, 85, 73, 20, 0) ++ ByteString.fromArray("1.2.840.113619.6.184".toCharArray.map(_.toByte))
+  val instanceCreatorUID: ByteString = tagToBytesLE(0x00080014) ++ ByteString("UI") ++ shortToBytesLE(0x0014) ++ ByteString("1.2.840.113619.6.184")
 
-  // Media Storage SOP Instance UID
-  // x00020003          UI         40         1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735   0x0 (padding)
-  val mediaStorageSOPInstanceUID: ByteString = ByteString(2, 0, 3, 0, 85, 73, 56, 0) ++ ByteString.fromArray("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735".toCharArray.map(_.toByte)) ++ ByteString(0)
+  val mediaStorageSOPInstanceUID: ByteString = tagToBytesLE(0x00020003) ++ ByteString("UI") ++ shortToBytesLE(0x0038) ++ ByteString("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735") ++ pad0
 
   // Transfer Syntax UIDs
-  val tsuidExplicitLE = ByteString(2, 0, 16, 0, 85, 73, 20, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
-  val tsuidExplicitBE = ByteString(2, 0, 16, 0, 85, 73, 20, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '2', 0)
-  val tsuidImplicitLE = ByteString(2, 0, 16, 0, 85, 73, 18, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', 0)
-  val tsuidDeflatedExplicitLE = ByteString(2, 0, 16, 0, 85, 73, 22, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', '.', '9', '9')
-  val tsuidExplicitLESelfImplicit = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
-  val patientNameJohnDoe = ByteString(16, 0, 16, 0, 80, 78, 8, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
-  val patientNameJohnDoeBE = ByteString(0, 16, 0, 16, 80, 78, 0, 8, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
-  val patientNameJohnDoeImplicit = ByteString(16, 0, 16, 0, 8, 0, 0, 0, 'J', 'o', 'h', 'n', '^', 'D', 'o', 'e')
-  val studyDate = ByteString(8, 0, 32, 0, 68, 65, 10, 0, 49, 56, 51, 49, 51, 56, 46, 55, 54, 53)
+  val tsuidExplicitLE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0014) ++ ByteString(UID.ExplicitVRLittleEndian) ++ pad0
+  val tsuidExplicitBE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0014) ++ ByteString(UID.ExplicitVRBigEndianRetired) ++ pad0
+  val tsuidImplicitLE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0012) ++ ByteString(UID.ImplicitVRLittleEndian) ++ pad0
+  val tsuidDeflatedExplicitLE: ByteString = tagToBytesLE(0x00020010) ++ ByteString("UI") ++ shortToBytesLE(0x0016) ++ ByteString(UID.DeflatedExplicitVRLittleEndian)
+  // (not conforming to standard)
+  val tsuidExplicitLEImplicitLE: ByteString = tagToBytesLE(0x00020010) ++ intToBytesLE(0x00000014) ++ ByteString(UID.ExplicitVRLittleEndian) ++ pad0
 
-  def itemStart(length: Byte) = ByteString(254, 255, 0, 224, length, 0, 0, 0)
+  val patientNameJohnDoe: ByteString = tagToBytesLE(0x00100010) ++ ByteString("PN") ++ shortToBytesLE(0x0008) ++ ByteString("John^Doe")
+  val patientNameJohnDoeBE: ByteString = tagToBytesBE(0x00100010) ++ ByteString("PN") ++ shortToBytesBE(0x0008) ++ ByteString("John^Doe")
+  val patientNameJohnDoeImplicit: ByteString = tagToBytesLE(0x00100010) ++ intToBytesLE(0x00000008) ++ ByteString("John^Doe")
+  val emptyPatientName: ByteString = tagToBytesLE(0x00100010) ++ ByteString("PN") ++ shortToBytesLE(0x0000)
+  val studyDate: ByteString = tagToBytesLE(0x00080020) ++ ByteString("DA") ++ shortToBytesLE(0x0008) ++ ByteString("19700101")
 
-  val itemNoLength = ByteString(254, 255, 0, 224, -1, -1, -1, -1)
+  def item(): ByteString = item(0xFFFFFFFF)
+  def item(length: Int): ByteString = tagToBytesLE(0xFFFEE000) ++ intToBytesLE(length)
+  def fragment(length: Int): ByteString = item(length)
 
-  val itemEnd = ByteString(254, 255, 13, 224, 0, 0, 0, 0)
-  val seqEnd = ByteString(254, 255, 221, 224, 0, 0, 0, 0)
-  val seqEndNonZeroLength = ByteString(254, 255, 221, 224, 10, 0, 0, 0)
-  val pixeDataFragments = ByteString(224, 127, 16, 0, 79, 87, 0, 0, 255, 255, 255, 255) // VR = OW, length = -1
+  val itemEnd: ByteString = tagToBytesLE(0xFFFEE00D) ++ intToBytesLE(0x00000000)
+  val sequenceEnd: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000000)
+  val fragmentsEnd: ByteString = sequenceEnd
+  val sequenceEndNonZeroLength: ByteString = tagToBytesLE(0xFFFEE0DD) ++ intToBytesLE(0x00000010)
+  val pixeDataFragments: ByteString = tagToBytesLE(0x7FE00010) ++ ByteString('O', 'W', 0, 0) ++ intToBytesLE(0xFFFFFFFF)
 
-  val seqStart = ByteString(0x08, 0x00, 0x15, 0x92, 'S', 'Q', 0, 0, -1, -1, -1, -1)
-  val waveformSeqStart = ByteString(0x00, 0x54, 0x00, 0x01, 'S', 'Q', 0, 0, -1, -1, -1, -1)
+  def sequence(tag: Int): ByteString = sequence(tag, 0xFFFFFFFF)
+  def sequence(tag: Int, length: Int): ByteString = tagToBytesLE(tag) ++ ByteString('S', 'Q', 0, 0) ++ intToBytesLE(length)
 
-  // file meta with wrong transfer syntax:
-  // implicit little endian (not conforming to standard)
-  val fmiVersionImplicitLE = ByteString(2, 0, 1, 0, 2, 0, 0, 0, 0, 1)
-  val mediaStorageSOPClassUIDImplicitLE: ByteString = ByteString(2, 0, 2, 0, 26, 0, 0, 0) ++ ByteString.fromArray("1.2.840.10008.5.1.4.1.1.2".toCharArray.map(_.toByte)) ++ ByteString(0)
-  val mediaStorageSOPInstanceUIDImplicitLE: ByteString = ByteString(2, 0, 3, 0, 56, 0, 0, 0) ++ ByteString.fromArray("1.2.276.0.7230010.3.1.4.1536491920.17152.1480884676.735".toCharArray.map(_.toByte)) ++ ByteString(0)
-  val tsuidExplicitLEImplicitLE = ByteString(2, 0, 16, 0, 20, 0, 0, 0, '1', '.', '2', '.', '8', '4', '0', '.', '1', '0', '0', '0', '8', '.', '1', '.', '2', '.', '1', 0)
+  val waveformSeqStart: ByteString = tagToBytesLE(0x54000100) ++ ByteString('S', 'Q', 0, 0) ++ intToBytesLE(0xFFFFFFFF)
 
-  def pixelData(length: Int): ByteString = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x42, 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
-  def waveformData(length: Int): ByteString = ByteString(0x00, 0x54, 0x10, 0x10, 0x4f, 0x57, 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
+  def pixelData(length: Int): ByteString = tagToBytesLE(0x7FE00010) ++ ByteString('O', 'W', 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
+  def waveformData(length: Int): ByteString = tagToBytesLE(0x54001010) ++ ByteString('O', 'W', 0, 0) ++ intToBytes(length, bigEndian = false) ++ ByteString(new Array[Byte](length))
 
 }

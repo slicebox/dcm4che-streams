@@ -11,7 +11,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 
 import scala.concurrent.ExecutionContextExecutor
 
-class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
+class DicomParseFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
   import DicomParts._
   import TestData._
@@ -26,7 +26,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -43,7 +43,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -59,7 +59,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -67,16 +67,14 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
       .expectDicomComplete()
   }
 
-  it should "output an empty value chunk when value length is zero" in {
+  it should "not output value chunks when value length is zero" in {
     val bytes = ByteString(8, 0, 32, 0, 68, 65, 0, 0) ++ ByteString(16, 0, 16, 0, 80, 78, 0, 0)
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.StudyDate)
-      .expectValueChunk()
       .expectHeader(Tag.PatientName)
-      .expectValueChunk()
       .expectDicomComplete()
   }
 
@@ -84,7 +82,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidExplicitLE, studyDate) ++ tsuidExplicitLE ++ studyDate
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -100,7 +98,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = preamble
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -112,7 +110,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(malformedTsuid) ++ malformedTsuid ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -128,7 +126,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = patientNameJohnDoe.dropRight(2)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -139,7 +137,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -157,7 +155,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate, gzip = true)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -175,7 +173,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow(inflate = false))
+      .via(new DicomParseFlow(inflate = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -187,59 +185,59 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "read DICOM data with fragments" in {
-    val bytes = pixeDataFragments ++ itemStart(4) ++ ByteString(1, 2, 3, 4) ++ itemStart(4) ++ ByteString(5, 6, 7, 8) ++ seqEnd
+    val bytes = pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragment(4) ++ ByteString(5, 6, 7, 8) ++ fragmentsEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(1)
+      .expectFragment(1, 4)
       .expectValueChunk()
-      .expectItem(2)
+      .expectFragment(2, 4)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
 
   it should "issue a warning when a fragments delimitation tag has nonzero length" in {
-    val bytes = pixeDataFragments ++ itemStart(4) ++ ByteString(1, 2, 3, 4) ++ itemStart(4) ++ ByteString(5, 6, 7, 8) ++ seqEndNonZeroLength
+    val bytes = pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragment(4) ++ ByteString(5, 6, 7, 8) ++ sequenceEndNonZeroLength
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(1)
+      .expectFragment(1, 4)
       .expectValueChunk()
-      .expectItem(2)
+      .expectFragment(2, 4)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
 
   it should "parse a tag which is not an item, item data nor fragments delimitation inside fragments as unknown" in {
-    val bytes = pixeDataFragments ++ itemStart(4) ++ ByteString(1, 2, 3, 4) ++ studyDate ++ itemStart(4) ++ ByteString(5, 6, 7, 8) ++ seqEnd
+    val bytes = pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ studyDate ++ fragment(4) ++ ByteString(5, 6, 7, 8) ++ fragmentsEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectFragments()
-      .expectItem(1)
+      .expectFragment(1, 4)
       .expectValueChunk()
       .expectUnknownPart()
-      .expectItem(2)
+      .expectFragment(2, 4)
       .expectValueChunk()
       .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
 
   it should "read DICOM data containing a sequence" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
@@ -254,10 +252,10 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "read DICOM data containing a sequence in a sequence" in {
-    val bytes = seqStart ++ itemNoLength ++ seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd ++ studyDate ++ itemEnd ++ sequenceEnd
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectSequence(Tag.DerivationCodeSequence)
@@ -280,7 +278,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
 
     val source = Source.single(bytes)
       .via(new Chunker(chunkSize = 1))
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -297,7 +295,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = ByteString(1, 2, 3, 4, 5, 6, 7, 8, 9)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectDicomError()
@@ -307,7 +305,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitBE) ++ tsuidExplicitBE ++ patientNameJohnDoeBE
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -324,7 +322,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = preamble ++ fmiGroupLength(tsuidImplicitLE) ++ tsuidImplicitLE ++ patientNameJohnDoeImplicit
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -341,7 +339,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = patientNameJohnDoe ++ studyDate
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow(stopTag = Some(Tag.StudyDate)))
+      .via(new DicomParseFlow(stopTag = Some(Tag.StudyDate)))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PatientName)
@@ -353,7 +351,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = preamble ++ fmiGroupLength(tsuidExplicitLE) ++ tsuidExplicitLE ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow(chunkSize = 5))
+      .via(new DicomParseFlow(chunkSize = 5))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -374,7 +372,7 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow(chunkSize = 25, inflate = false))
+      .via(new DicomParseFlow(chunkSize = 25, inflate = false))
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.FileMetaInformationGroupLength)
@@ -387,10 +385,10 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
   }
 
   it should "accept meta information encoded with implicit VR" in {
-    val bytes = preamble ++ tsuidExplicitLESelfImplicit ++ patientNameJohnDoe
+    val bytes = preamble ++ tsuidExplicitLEImplicitLE ++ patientNameJohnDoe
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectPreamble()
@@ -406,11 +404,46 @@ class DicomPartFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with FlatS
     val bytes = ByteString(0xe0, 0x7f, 0x10, 0x00, 0x4f, 0x57, 0, 0) ++ intToBytes(length.toInt, bigEndian = false)
 
     val source = Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
 
     source.runWith(TestSink.probe[DicomPart])
       .expectHeader(Tag.PixelData, VR.OW, length)
       .expectValueChunk(ByteString.empty)
+      .expectDicomComplete()
+  }
+
+  it should "handle sequences and items of determinate length" in {
+    val bytes = studyDate ++ (sequence(Tag.DerivationCodeSequence, 8 + 18 + 16) ++ item(18 + 16) ++ studyDate ++ patientNameJohnDoe) ++ patientNameJohnDoe
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectSequence(Tag.DerivationCodeSequence)
+      .expectItem(1)
+      .expectHeader(Tag.StudyDate)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "handle fragments with empty basic offset table (first item)" in {
+    val bytes = pixeDataFragments ++ fragment(0) ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragmentsEnd
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectFragments()
+      .expectFragment(1, 0)
+      .expectFragment(2, 4)
+      .expectValueChunk(4)
+      .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
 }
