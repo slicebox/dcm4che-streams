@@ -10,18 +10,21 @@ import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data._
 import org.dcm4che3.io.{DicomInputStream, DicomOutputStream, DicomStreamException}
-import org.scalatest.{AsyncFlatSpecLike, Matchers}
+import org.scalatest.{Assertion, AsyncFlatSpecLike, BeforeAndAfterAll, Matchers}
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContextExecutor, Future}
 
-class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers {
+class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers with BeforeAndAfterAll {
 
-  import DicomData._
-  import se.nimsa.dcm4che.streams.DicomAttributesSink._
-  import se.nimsa.dcm4che.streams.DicomFlows._
+  import DicomAttributesSink._
+  import DicomFlows._
+  import TestData._
+  import TestUtils._
 
-  implicit val materializer = ActorMaterializer()
-  implicit val ec = system.dispatcher
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  implicit val ec: ExecutionContextExecutor = system.dispatcher
+
+  override def afterAll(): Unit = system.terminate()
 
   def toAttributes(bytes: ByteString): (Option[Attributes], Option[Attributes]) = {
     val dis = new DicomInputStream(new ByteArrayInputStream(bytes.toArray))
@@ -40,11 +43,11 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
 
   def toFlowAttributes(bytes: ByteString): Future[(Option[Attributes], Option[Attributes])] =
     Source.single(bytes)
-      .via(new DicomPartFlow())
+      .via(new DicomParseFlow())
       .via(attributeFlow)
       .runWith(attributesSink)
 
-  def assertEquivalentToDcm4che(bytes: ByteString) = {
+  def assertEquivalentToDcm4che(bytes: ByteString): Future[Assertion] = {
     val attributes = toAttributes(bytes)
     val futureFlowAttributes = toFlowAttributes(bytes)
 
@@ -81,15 +84,15 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for deflated DICOM files" in {
-    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
+    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(studyDate ++ patientNameJohnDoe)
     assertEquivalentToDcm4che(bytes)
   }
 
   it should "skip deflated data chunks" in {
-    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(patientNameJohnDoe ++ studyDate)
+    val bytes = fmiGroupLength(tsuidDeflatedExplicitLE) ++ tsuidDeflatedExplicitLE ++ deflate(studyDate ++ patientNameJohnDoe)
 
     val futureFlowAttributes = Source.single(bytes)
-      .via(new DicomPartFlow(inflate = false))
+      .via(new DicomParseFlow(inflate = false))
       .via(attributeFlow)
       .runWith(attributesSink)
 
@@ -109,7 +112,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with fragments" in {
-    val bytes = pixeDataFragments ++ itemStart(4) ++ ByteString(1, 2, 3, 4) ++ itemStart(4) ++ ByteString(5, 6, 7, 8) ++ seqEnd
+    val bytes = pixeDataFragments ++ fragment(4) ++ ByteString(1, 2, 3, 4) ++ fragment(4) ++ ByteString(5, 6, 7, 8) ++ fragmentsEnd
 
     val (maybeFmi, maybeDataset) = toAttributes(bytes)
     val futureFlowAttributes = toFlowAttributes(bytes)
@@ -141,12 +144,12 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ patientNameJohnDoe ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ studyDate ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd
     assertEquivalentToDcm4che(bytes)
   }
 
   it should "be equivalent to dcm4che for DICOM files with sequences in sequences" in {
-    val bytes = seqStart ++ itemNoLength ++ seqStart ++ itemNoLength ++ patientNameJohnDoe ++ itemEnd ++ seqEnd ++ studyDate ++ itemEnd ++ seqEnd
+    val bytes = sequence(Tag.DerivationCodeSequence) ++ item ++ sequence(Tag.DerivationCodeSequence) ++ item ++ patientNameJohnDoe ++ itemEnd ++ sequenceEnd ++ studyDate ++ itemEnd ++ sequenceEnd
     assertEquivalentToDcm4che(bytes)
   }
 

@@ -37,10 +37,10 @@ abstract class ByteStringParser[T] extends GraphStage[FlowShape[ByteString, T]] 
 
   import ByteStringParser._
 
-  protected val bytesIn = Inlet[ByteString]("bytesIn")
-  protected val objOut = Outlet[T]("objOut")
+  protected val bytesIn: Inlet[ByteString] = Inlet[ByteString]("bytesIn")
+  protected val objOut: Outlet[T] = Outlet[T]("objOut")
 
-  override def initialAttributes = Attributes.name("ByteStringParser")
+  override def initialAttributes: Attributes = Attributes.name("ByteStringParser")
 
   final override val shape = FlowShape(bytesIn, objOut)
 
@@ -54,14 +54,14 @@ abstract class ByteStringParser[T] extends GraphStage[FlowShape[ByteString, T]] 
 
     final protected def startWith(step: ParseStep[T]): Unit = current = step
 
-    final protected def startInflating(inflateData: InflateData, reader: ByteReader) = {
+    final protected def startInflating(inflateData: InflateData, reader: ByteReader): Unit = {
       if (this.inflateData.isDefined)
         throw new IllegalStateException("Inflating can only be started once")
       this.inflateData = Some(inflateData)
       deflatedBuffer = reader.takeAll()
     }
 
-    final protected def isInflating = inflateData.isDefined
+    final protected def isInflating: Boolean = inflateData.isDefined
 
     protected def recursionLimit: Int = 100000
 
@@ -234,7 +234,7 @@ object ByteStringParser {
 
     private[this] var off = 0
 
-    def setInput(input: ByteString) = {
+    def setInput(input: ByteString): Unit = {
       this.input = input
       off = 0
     }

@@ -30,16 +30,16 @@ import org.dcm4che3.data.Tag._
   * @param contexts supported MediaStorageSOPClassUID, TransferSynatxUID combinations
   */
 class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphStage[FlowShape[ByteString, ByteString]] {
-  val in = Inlet[ByteString]("DicomValidateFlow.in")
-  val out = Outlet[ByteString]("DicomValidateFlow.out")
-  override val shape = FlowShape.of(in, out)
+  val in: Inlet[ByteString] = Inlet[ByteString]("DicomValidateFlow.in")
+  val out: Outlet[ByteString] = Outlet[ByteString]("DicomValidateFlow.out")
+  override val shape: FlowShape[ByteString, ByteString] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
-    var buffer = ByteString.empty
+    var buffer: ByteString = ByteString.empty
     var isValidated = false
     // 378  bytes should be enough when passing context - Media Storage SOP Class UID and Transfer Syntax UID
     // otherwise read to first header
-    val maxBufferLength = if (contexts.isDefined) 512 else 140
+    val maxBufferLength: Int = if (contexts.isDefined) 512 else 140
 
     setHandlers(in, out, new InHandler with OutHandler {
 
@@ -82,7 +82,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
         }
       }
 
-      override def onUpstreamFinish() = {
+      override def onUpstreamFinish(): Unit = {
         if (!isValidated)
           if (contexts.isDefined) {
             if (buffer.length >= dicomPreambleLength && isPreamble(buffer)) {
@@ -107,7 +107,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
 
 
       // Find and validate MediaSOPClassUID and TranferSyntaxUID
-      private def validateFileMetaInformation(data: ByteString, info: Info) = {
+      private def validateFileMetaInformation(data: ByteString, info: Info): Unit = {
         var currentData = data
 
         val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => (tag & 0xFFFF0000) > 0x00020000)
@@ -132,7 +132,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
 
 
       // Find and validate SOPCLassUID
-      private def validateSOPClassUID(data: ByteString, info: Info) = {
+      private def validateSOPClassUID(data: ByteString, info: Info): Unit = {
 
         val (failed, tailData) = findAndValidateField(data, info, "SOPClassUID", (tag: Int) => tag == SOPClassUID, (tag: Int) => tag > SOPClassUID)
 
@@ -161,7 +161,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
         * @param stopSearching stop condition
         * @return
         */
-      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: (Int) => Boolean, stopSearching: (Int) => Boolean ) = {
+      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: (Int) => Boolean, stopSearching: (Int) => Boolean ): (Boolean, ByteString) = {
         var currentTag = -1
         var failed = false
         var currentData = data
@@ -177,7 +177,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
             } else {
               currentTag = tag
               if (!found(tag)) {
-                currentData = currentData.drop(headerLength + length)
+                currentData = currentData.drop(headerLength + length.toInt)
               }
               if (stopSearching(currentTag) || currentData.size < 8) {
                 // read past stop criteria without finding tag, or not enough data left in buffer
@@ -194,12 +194,12 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
         (failed, currentData)
       }
 
-      def setValidated() = {
+      def setValidated(): Unit = {
         isValidated = true
         push(out, buffer)
       }
 
-      def setFailed() = failStage(new DicomStreamException("Not a DICOM stream"))
+      def setFailed(): Unit = failStage(new DicomStreamException("Not a DICOM stream"))
 
     })
   }
