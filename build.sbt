@@ -1,5 +1,5 @@
 name := "dcm4che-streams"
-version := "0.5-SNAPSHOT"
+version := "0.6-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.3"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
@@ -52,13 +52,6 @@ pomIncludeRepository := { _ => false }
 
 pomExtra := (
   <url>https://github.com/slicebox/dcm4che-streams</url>
-    <licenses>
-      <license>
-        <name>Apache-2.0</name>
-        <url>https://opensource.org/licenses/Apache-2.0</url>
-        <distribution>repo</distribution>
-      </license>
-    </licenses>
     <scm>
       <url>git@github.com:slicebox/dcm4che-streams.git</url>
       <connection>scm:git:git@github.com:slicebox/dcm4che-streams.git</connection>
