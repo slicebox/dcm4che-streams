@@ -23,6 +23,7 @@ import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
 import org.dcm4che3.data.{Tag, VR}
 import org.dcm4che3.io.DicomStreamException
+import se.nimsa.dcm4che.streams.DicomParsing.{dicomInfo, Info}
 import se.nimsa.dcm4che.streams.DicomParts._
 
 /**
@@ -444,11 +445,13 @@ object DicomFlows {
       {
         case fmiAttributes: DicomAttributes =>
           if (fmiAttributes.attributes.nonEmpty) {
-            val fmiAttributesNoLength = fmiAttributes.attributes
-              .filter(_.header.tag != Tag.FileMetaInformationGroupLength)
+            val info = dicomInfo(fmiAttributes.attributes.head.header.bytes).getOrElse(Info(bigEndian = false, explicitVR = true, hasFmi = true))
+            val fmiAttributesNoLength = fmiAttributes.attributes.filter(_.header.tag != Tag.FileMetaInformationGroupLength)
             val length = fmiAttributesNoLength.map(_.bytes.length).sum
-            val lengthHeader = DicomHeader(Tag.FileMetaInformationGroupLength, VR.OB, 4, isFmi = true, bigEndian = false, explicitVR = true, ByteString(2, 0, 0, 0, 85, 76, 4, 0))
-            val lengthChunk = DicomValueChunk(bigEndian = false, intToBytesLE(length), last = true)
+            val lengthBytes = tagToBytes(Tag.FileMetaInformationGroupLength, info.bigEndian) ++
+              (if (info.explicitVR) ByteString("UL") ++ shortToBytes(4, info.bigEndian) else intToBytes(4, info.bigEndian))
+            val lengthHeader = DicomHeader(Tag.FileMetaInformationGroupLength, VR.UL, 4, isFmi = true, info.bigEndian, info.explicitVR, lengthBytes)
+            val lengthChunk = DicomValueChunk(info.bigEndian, intToBytes(length, info.bigEndian), last = true)
             val fmiParts = fmiAttributesNoLength.toList.flatMap(attribute => attribute.header :: attribute.valueChunks.toList)
             fmi = lengthHeader :: lengthChunk :: fmiParts
           }
