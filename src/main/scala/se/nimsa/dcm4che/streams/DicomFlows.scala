@@ -180,14 +180,14 @@ object DicomFlows {
     * attribute found
     */
   val validateFlow: Flow[ByteString, ByteString, NotUsed] =
-    Flow[ByteString].via(new DicomValidateFlow(None))
+    Flow[ByteString].via(new DicomValidateFlow(None, drainIncoming = false))
 
   /**
     * A flow which passes on the input bytes unchanged, fails for non-DICOM files, validates for DICOM files with supported
     * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context
     */
-  def validateFlowWithContext(contexts: Seq[ValidationContext]): Flow[ByteString, ByteString, NotUsed] =
-    Flow[ByteString].via(new DicomValidateFlow(Some(contexts)))
+  def validateFlowWithContext(contexts: Seq[ValidationContext], drainIncoming: Boolean): Flow[ByteString, ByteString, NotUsed] =
+    Flow[ByteString].via(new DicomValidateFlow(Some(contexts), drainIncoming))
 
   /**
     * A flow which deflates the dataset but leaves the meta information intact. Useful when the dicom parsing in `DicomParseFlow`

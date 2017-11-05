@@ -2,14 +2,15 @@ package se.nimsa.dcm4che.streams
 
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Sink, Source}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.TestKit
 import akka.util.ByteString
 import org.dcm4che3.data.UID._
 import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
 
-import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.{Await, ExecutionContextExecutor}
+import scala.concurrent.duration.DurationInt
 
 class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec")) with FlatSpecLike with Matchers with BeforeAndAfterAll {
 
@@ -100,7 +101,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     val source = Source.single(bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -125,7 +126,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -136,7 +137,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with less than 512 bytes
     source = Source.single(bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -161,7 +162,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -170,7 +171,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with less than 512 bytes
     source = Source.single(bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -192,7 +193,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -203,7 +204,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with less than 512 bytes
     source = Source.single(bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -224,7 +225,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -235,7 +236,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
     // test with less than 512 bytes
     source = Source.single(bytes)
       .via(new Chunker(1))
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -263,7 +264,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -271,7 +272,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with less than 512 bytes
     source = Source.single(bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -287,7 +288,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -295,7 +296,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with less than 512 bytes
     source = Source.single(bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -312,7 +313,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -320,7 +321,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with less than 512 bytes
     source = Source.single(bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -337,7 +338,7 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with more than 512 bytes
     var source = Source.single(moreThan512Bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
@@ -346,12 +347,60 @@ class DicomValidateFlowsTest extends TestKit(ActorSystem("DicomValidateFlowsSpec
 
     // test with less than 512 bytes
     source = Source.single(bytes)
-      .via(validateFlowWithContext(contexts))
+      .via(validateFlowWithContext(contexts, drainIncoming = false))
 
     source.runWith(TestSink.probe[ByteString])
       .request(1)
       .expectNext(bytes)
       .expectComplete()
+  }
+
+  it should "stop requesting data once validation has failed if asked to not drain incoming data" in {
+    var nItems = 0
+
+    val bytesSource = Source.fromIterator(() => (1 to 10000)
+      .map(_.toByte).iterator)
+      .grouped(1000)
+      .map(bytes => ByteString(bytes.toArray))
+      .map(bs => {
+        nItems += 1
+        bs
+      })
+
+    val f = bytesSource
+      .via(new DicomValidateFlow(None, drainIncoming = false))
+      .runWith(Sink.ignore)
+
+    Await.ready(f, 5.seconds)
+
+    nItems shouldBe 1
+  }
+
+  it should "keep requesting data until finished after validation failed, but not emit more data when asked to drain incoming data" in {
+    var nItemsRequested = 0
+    var nItemsEmitted = 0
+
+    val bytesSource = Source.fromIterator(() => (1 to 10000)
+      .map(_.toByte).iterator)
+      .grouped(1000)
+      .map(bytes => ByteString(bytes.toArray))
+      .map(bs => {
+        nItemsRequested += 1
+        bs
+      })
+
+    val f = bytesSource
+      .via(new DicomValidateFlow(None, drainIncoming = true))
+      .map(bs => {
+        nItemsEmitted += 1
+        bs
+      })
+      .runWith(Sink.ignore)
+
+    Await.ready(f, 5.seconds)
+
+    nItemsRequested shouldBe 10
+    nItemsEmitted shouldBe 0
   }
 
 }

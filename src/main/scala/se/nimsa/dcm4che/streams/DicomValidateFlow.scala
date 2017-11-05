@@ -27,17 +27,20 @@ import org.dcm4che3.data.Tag._
 /**
   * A flow which passes on the input bytes unchanged, fails for non-DICOM files, validates for DICOM files with supported
   * Media Storage SOP Class UID, Transfer Syntax UID combination passed as context.
+  *
   * @param contexts supported MediaStorageSOPClassUID, TransferSynatxUID combinations
   */
-class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphStage[FlowShape[ByteString, ByteString]] {
+class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming: Boolean) extends GraphStage[FlowShape[ByteString, ByteString]] {
   val in: Inlet[ByteString] = Inlet[ByteString]("DicomValidateFlow.in")
   val out: Outlet[ByteString] = Outlet[ByteString]("DicomValidateFlow.out")
   override val shape: FlowShape[ByteString, ByteString] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
     var buffer: ByteString = ByteString.empty
-    var isValidated = false
-    // 378  bytes should be enough when passing context - Media Storage SOP Class UID and Transfer Syntax UID
+    var isValidated: Option[Boolean] = None
+    var failException: Option[Throwable] = None
+
+    // 378 bytes should be enough when passing context - Media Storage SOP Class UID and Transfer Syntax UID
     // otherwise read to first header
     val maxBufferLength: Int = if (contexts.isDefined) 512 else 140
 
@@ -49,60 +52,65 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
 
       override def onPush(): Unit = {
         val chunk = grab(in)
-        if (isValidated)
-          push(out, chunk)
-        else {
-          buffer = buffer ++ chunk
+        isValidated match {
+          case None =>
+            buffer = buffer ++ chunk
 
-          if (buffer.length >= maxBufferLength) {
-            if (isPreamble(buffer)) {
-              if (DicomParsing.isHeader(buffer.drop(dicomPreambleLength))) {
+            if (buffer.length >= maxBufferLength)
+              if (isPreamble(buffer))
+                if (DicomParsing.isHeader(buffer.drop(dicomPreambleLength)))
+                  if (contexts.isDefined) {
+                    val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
+                    validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
+                  } else
+                    setValidated()
+                else
+                  setFailed(new DicomStreamException("Not a DICOM stream"))
+              else if (DicomParsing.isHeader(buffer))
                 if (contexts.isDefined) {
-                  val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
-                  validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
-                } else {
+                  val info = DicomParsing.dicomInfo(buffer).get
+                  validateSOPClassUID(buffer, info)
+                } else
                   setValidated()
-                }
-              } else {
-                setFailed()
-              }
-            } else if (DicomParsing.isHeader(buffer)) {
-              if (contexts.isDefined) {
-                val info = DicomParsing.dicomInfo(buffer).get
-                validateSOPClassUID(buffer, info)
-              } else {
-                setValidated()
-              }
-            } else {
-              setFailed()
-            }
-          } else {
+              else
+                setFailed(new DicomStreamException("Not a DICOM stream"))
+            else
+              pull(in)
+          case Some(true) =>
+            push(out, chunk)
+          case Some(false) =>
+            println("draining...")
             pull(in)
-          }
         }
       }
 
       override def onUpstreamFinish(): Unit = {
-        if (!isValidated)
-          if (contexts.isDefined) {
-            if (buffer.length >= dicomPreambleLength && isPreamble(buffer)) {
-              val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
-              validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
-            } else if (buffer.length >= 8 && DicomParsing.isHeader(buffer)) {
-              val info = DicomParsing.dicomInfo(buffer).get
-              validateSOPClassUID(buffer, info)
+        isValidated match {
+          case None =>
+            if (contexts.isDefined) {
+              if (buffer.length >= dicomPreambleLength && isPreamble(buffer)) {
+                val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
+                validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
+              } else if (buffer.length >= 8 && DicomParsing.isHeader(buffer)) {
+                val info = DicomParsing.dicomInfo(buffer).get
+                validateSOPClassUID(buffer, info)
+              } else {
+                setFailed(new DicomStreamException("Not a DICOM stream"))
+              }
             } else {
-              setFailed()
+              if (buffer.length == dicomPreambleLength && isPreamble(buffer))
+                setValidated()
+              else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
+                setValidated()
+              else
+                setFailed(new DicomStreamException("Not a DICOM stream"))
             }
-          } else {
-            if (buffer.length == dicomPreambleLength && isPreamble(buffer))
-              setValidated()
-            else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
-              setValidated()
-            else
-              setFailed()
-          }
-        completeStage()
+            completeStage()
+          case Some(true) =>
+            completeStage()
+          case Some(false) =>
+            failStage(failException.get)
+        }
       }
 
 
@@ -124,7 +132,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
             if (contexts.get.contains(currentContext)) {
               setValidated()
             } else {
-              failStage(new DicomStreamException(s"The presentation context [SOPClassUID = ${mscu.value.utf8String}, TransferSyntaxUID = ${tsuid.value.utf8String}] is not supported"))
+              setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${mscu.value.utf8String}, TransferSyntaxUID = ${tsuid.value.utf8String}] is not supported"))
             }
           }
         }
@@ -147,24 +155,26 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
           if (contexts.get.contains(currentContext)) {
             setValidated()
           } else {
-            failStage(new DicomStreamException(s"The presentation context [SOPClassUID = ${scuid.value.utf8String}, TransferSyntaxUID = $tsuid] is not supported"))
+            setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${scuid.value.utf8String}, TransferSyntaxUID = $tsuid] is not supported"))
           }
         }
       }
 
       /**
         * Utility method. Search after DICOM Header in byte stream.
-        * @param data bytes stream
-        * @param info info object obtained earlier
-        * @param fieldName dicom field name, used for error log
-        * @param found field found condition, typically comparison of dicom tags
+        *
+        * @param data          bytes stream
+        * @param info          info object obtained earlier
+        * @param fieldName     dicom field name, used for error log
+        * @param found         field found condition, typically comparison of dicom tags
         * @param stopSearching stop condition
         * @return
         */
-      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: (Int) => Boolean, stopSearching: (Int) => Boolean ): (Boolean, ByteString) = {
+      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: (Int) => Boolean, stopSearching: (Int) => Boolean): (Boolean, ByteString) = {
         var currentTag = -1
         var failed = false
         var currentData = data
+
         def takeMax8(buffer: ByteString) = if (buffer.size >= 8) buffer.take(8) else buffer
 
         while (!found(currentTag) && !failed) {
@@ -173,7 +183,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
             val (tag, _, headerLength, length) = maybeHeader.get
             if (tag < currentTag) {
               failed = true
-              failStage(new DicomStreamException(s"Parse error. Invalid tag order or invalid DICOM header: ${takeMax8(currentData)}."))
+              setFailed(new DicomStreamException(s"Parse error. Invalid tag order or invalid DICOM header: ${takeMax8(currentData)}."))
             } else {
               currentTag = tag
               if (!found(tag)) {
@@ -182,24 +192,31 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]]) extends GraphS
               if (stopSearching(currentTag) || currentData.size < 8) {
                 // read past stop criteria without finding tag, or not enough data left in buffer
                 failed = true
-                failStage(new DicomStreamException(s"Not a valid DICOM file. Could not find $fieldName."))
+                setFailed(new DicomStreamException(s"Not a valid DICOM file. Could not find $fieldName."))
               }
             }
           } else {
             // could not parse header
             failed = true
-            failStage(new DicomStreamException(s"Parse error. Invalid DICOM header: ${takeMax8(currentData)}."))
+            setFailed(new DicomStreamException(s"Parse error. Invalid DICOM header: ${takeMax8(currentData)}."))
           }
         }
         (failed, currentData)
       }
 
       def setValidated(): Unit = {
-        isValidated = true
+        isValidated = Some(true)
         push(out, buffer)
       }
 
-      def setFailed(): Unit = failStage(new DicomStreamException("Not a DICOM stream"))
+      def setFailed(e: Throwable): Unit = {
+        isValidated = Some(false)
+        failException = Some(e)
+        if (drainIncoming)
+          pull(in)
+        else
+          failStage(failException.get)
+      }
 
     })
   }
