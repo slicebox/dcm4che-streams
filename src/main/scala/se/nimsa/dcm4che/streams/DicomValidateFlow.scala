@@ -21,7 +21,7 @@ import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomFlows.ValidationContext
-import se.nimsa.dcm4che.streams.DicomParsing.{Info, isPreamble, dicomPreambleLength}
+import se.nimsa.dcm4che.streams.DicomParsing.{Info, dicomPreambleLength, isPreamble}
 import org.dcm4che3.data.Tag._
 
 /**
@@ -94,13 +94,13 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
                 val info = DicomParsing.dicomInfo(buffer).get
                 validateSOPClassUID(buffer, info)
               } else
-                setFailed(new DicomStreamException("Not a DICOM stream"))
+                failStage(new DicomStreamException("Not a DICOM stream"))
             else if (buffer.length == dicomPreambleLength && isPreamble(buffer))
               setValidated()
             else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
               setValidated()
             else
-              setFailed(new DicomStreamException("Not a DICOM stream"))
+              failStage(new DicomStreamException("Not a DICOM stream"))
             completeStage()
           case Some(true) =>
             completeStage()
