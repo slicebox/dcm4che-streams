@@ -46,9 +46,8 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
 
     setHandlers(in, out, new InHandler with OutHandler {
 
-      override def onPull(): Unit = {
+      override def onPull(): Unit =
         pull(in)
-      }
 
       override def onPush(): Unit = {
         val chunk = grab(in)
@@ -87,24 +86,21 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
       override def onUpstreamFinish(): Unit = {
         isValidated match {
           case None =>
-            if (contexts.isDefined) {
+            if (contexts.isDefined)
               if (buffer.length >= dicomPreambleLength && isPreamble(buffer)) {
                 val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
                 validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
               } else if (buffer.length >= 8 && DicomParsing.isHeader(buffer)) {
                 val info = DicomParsing.dicomInfo(buffer).get
                 validateSOPClassUID(buffer, info)
-              } else {
+              } else
                 setFailed(new DicomStreamException("Not a DICOM stream"))
-              }
-            } else {
-              if (buffer.length == dicomPreambleLength && isPreamble(buffer))
-                setValidated()
-              else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
-                setValidated()
-              else
-                setFailed(new DicomStreamException("Not a DICOM stream"))
-            }
+            else if (buffer.length == dicomPreambleLength && isPreamble(buffer))
+              setValidated()
+            else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
+              setValidated()
+            else
+              setFailed(new DicomStreamException("Not a DICOM stream"))
             completeStage()
           case Some(true) =>
             completeStage()
@@ -129,11 +125,10 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
             val tsuid = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
             val currentContext = ValidationContext(mscu.value.utf8String, tsuid.value.utf8String)
-            if (contexts.get.contains(currentContext)) {
+            if (contexts.get.contains(currentContext))
               setValidated()
-            } else {
+            else
               setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${mscu.value.utf8String}, TransferSyntaxUID = ${tsuid.value.utf8String}] is not supported"))
-            }
           }
         }
       }
@@ -152,11 +147,10 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
           val tsuid = info.assumedTransferSyntax
 
           val currentContext = ValidationContext(scuid.value.utf8String, tsuid)
-          if (contexts.get.contains(currentContext)) {
+          if (contexts.get.contains(currentContext))
             setValidated()
-          } else {
+          else
             setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${scuid.value.utf8String}, TransferSyntaxUID = $tsuid] is not supported"))
-          }
         }
       }
 
@@ -186,9 +180,8 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
               setFailed(new DicomStreamException(s"Parse error. Invalid tag order or invalid DICOM header: ${takeMax8(currentData)}."))
             } else {
               currentTag = tag
-              if (!found(tag)) {
+              if (!found(tag))
                 currentData = currentData.drop(headerLength + length.toInt)
-              }
               if (stopSearching(currentTag) || currentData.size < 8) {
                 // read past stop criteria without finding tag, or not enough data left in buffer
                 failed = true
