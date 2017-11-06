@@ -60,28 +60,20 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
                 if (DicomParsing.isHeader(buffer.drop(dicomPreambleLength)))
                   if (contexts.isDefined) {
                     val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
-                    validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
-                    if (!isValidated.getOrElse(true) && drainIncoming)
-                      pull(in)
+                    validateFileMetaInformation(buffer.drop(dicomPreambleLength), info, upstreamHasFinished = false)
                   } else
                     setValidated()
                 else {
-                  setFailed(new DicomStreamException("Not a DICOM stream"))
-                  if (drainIncoming)
-                    pull(in)
+                  setFailed(new DicomStreamException("Not a DICOM stream"), upstreamHasFinished = false)
                 }
               else if (DicomParsing.isHeader(buffer))
                 if (contexts.isDefined) {
                   val info = DicomParsing.dicomInfo(buffer).get
-                  validateSOPClassUID(buffer, info)
-                  if (!isValidated.getOrElse(true) && drainIncoming)
-                    pull(in)
+                  validateSOPClassUID(buffer, info, upstreamHasFinished = false)
                 } else
                   setValidated()
               else {
-                setFailed(new DicomStreamException("Not a DICOM stream"))
-                if (drainIncoming)
-                  pull(in)
+                setFailed(new DicomStreamException("Not a DICOM stream"), upstreamHasFinished = false)
               }
             else
               pull(in)
@@ -98,18 +90,18 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
             if (contexts.isDefined)
               if (buffer.length >= dicomPreambleLength && isPreamble(buffer)) {
                 val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
-                validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
+                validateFileMetaInformation(buffer.drop(dicomPreambleLength), info, upstreamHasFinished = true)
               } else if (buffer.length >= 8 && DicomParsing.isHeader(buffer)) {
                 val info = DicomParsing.dicomInfo(buffer).get
-                validateSOPClassUID(buffer, info)
+                validateSOPClassUID(buffer, info, upstreamHasFinished = true)
               } else
-                setFailed(new DicomStreamException("Not a DICOM stream"))
+                setFailed(new DicomStreamException("Not a DICOM stream"), upstreamHasFinished = true)
             else if (buffer.length == dicomPreambleLength && isPreamble(buffer))
               setValidated()
             else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
               setValidated()
             else
-              setFailed(new DicomStreamException("Not a DICOM stream"))
+              setFailed(new DicomStreamException("Not a DICOM stream"), upstreamHasFinished = true)
             completeStage()
           case Some(true) =>
             completeStage()
@@ -120,15 +112,15 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
 
 
       // Find and validate MediaSOPClassUID and TranferSyntaxUID
-      private def validateFileMetaInformation(data: ByteString, info: Info): Unit = {
+      private def validateFileMetaInformation(data: ByteString, info: Info, upstreamHasFinished: Boolean): Unit = {
         var currentData = data
 
-        val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => (tag & 0xFFFF0000) > 0x00020000)
+        val (failed, tailData) = findAndValidateField(data, info, "MediaStorageSOPClassUID", (tag: Int) => tag == MediaStorageSOPClassUID, (tag: Int) => (tag & 0xFFFF0000) > 0x00020000, upstreamHasFinished)
         if (!failed) {
           currentData = tailData
           val mscu = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
 
-          val (nextFailed, nextTailData) = findAndValidateField(currentData, info, "TransferSyntaxUID", (tag: Int) => tag == TransferSyntaxUID, (tag: Int) => (tag & 0xFFFF0000) > 0x00020000)
+          val (nextFailed, nextTailData) = findAndValidateField(currentData, info, "TransferSyntaxUID", (tag: Int) => tag == TransferSyntaxUID, (tag: Int) => (tag & 0xFFFF0000) > 0x00020000, upstreamHasFinished)
           if (!nextFailed) {
             currentData = nextTailData
             val tsuid = DicomParsing.parseUIDAttribute(currentData, info.explicitVR, info.bigEndian)
@@ -137,16 +129,16 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
             if (contexts.get.contains(currentContext))
               setValidated()
             else
-              setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${mscu.value.utf8String}, TransferSyntaxUID = ${tsuid.value.utf8String}] is not supported"))
+              setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${mscu.value.utf8String}, TransferSyntaxUID = ${tsuid.value.utf8String}] is not supported"), upstreamHasFinished)
           }
         }
       }
 
 
       // Find and validate SOPCLassUID
-      private def validateSOPClassUID(data: ByteString, info: Info): Unit = {
+      private def validateSOPClassUID(data: ByteString, info: Info, upstreamHasFinished: Boolean): Unit = {
 
-        val (failed, tailData) = findAndValidateField(data, info, "SOPClassUID", (tag: Int) => tag == SOPClassUID, (tag: Int) => tag > SOPClassUID)
+        val (failed, tailData) = findAndValidateField(data, info, "SOPClassUID", (tag: Int) => tag == SOPClassUID, (tag: Int) => tag > SOPClassUID, upstreamHasFinished)
 
         if (!failed) {
           // SOP CLass UID
@@ -159,7 +151,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
           if (contexts.get.contains(currentContext))
             setValidated()
           else
-            setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${scuid.value.utf8String}, TransferSyntaxUID = $tsuid] is not supported"))
+            setFailed(new DicomStreamException(s"The presentation context [SOPClassUID = ${scuid.value.utf8String}, TransferSyntaxUID = $tsuid] is not supported"), upstreamHasFinished)
         }
       }
 
@@ -173,7 +165,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
         * @param stopSearching stop condition
         * @return
         */
-      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: (Int) => Boolean, stopSearching: (Int) => Boolean): (Boolean, ByteString) = {
+      def findAndValidateField(data: ByteString, info: Info, fieldName: String, found: Int => Boolean, stopSearching: Int => Boolean, upstreamHasFinished: Boolean): (Boolean, ByteString) = {
         var currentTag = -1
         var failed = false
         var currentData = data
@@ -186,7 +178,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
             val (tag, _, headerLength, length) = maybeHeader.get
             if (tag < currentTag) {
               failed = true
-              setFailed(new DicomStreamException(s"Parse error. Invalid tag order or invalid DICOM header: ${takeMax8(currentData)}."))
+              setFailed(new DicomStreamException(s"Parse error. Invalid tag order or invalid DICOM header: ${takeMax8(currentData)}."), upstreamHasFinished)
             } else {
               currentTag = tag
               if (!found(tag))
@@ -194,13 +186,13 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
               if (stopSearching(currentTag) || currentData.size < 8) {
                 // read past stop criteria without finding tag, or not enough data left in buffer
                 failed = true
-                setFailed(new DicomStreamException(s"Not a valid DICOM file. Could not find $fieldName."))
+                setFailed(new DicomStreamException(s"Not a valid DICOM file. Could not find $fieldName."), upstreamHasFinished)
               }
             }
           } else {
             // could not parse header
             failed = true
-            setFailed(new DicomStreamException(s"Parse error. Invalid DICOM header: ${takeMax8(currentData)}."))
+            setFailed(new DicomStreamException(s"Parse error. Invalid DICOM header: ${takeMax8(currentData)}."), upstreamHasFinished)
           }
         }
         (failed, currentData)
@@ -211,10 +203,12 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
         push(out, buffer)
       }
 
-      def setFailed(e: Throwable): Unit = {
+      def setFailed(e: Throwable, upstreamHasFinished: Boolean): Unit = {
         isValidated = Some(false)
         failException = Some(e)
-        if (!drainIncoming)
+        if (!upstreamHasFinished && drainIncoming)
+          pull(in)
+        else
           failStage(failException.get)
       }
 
