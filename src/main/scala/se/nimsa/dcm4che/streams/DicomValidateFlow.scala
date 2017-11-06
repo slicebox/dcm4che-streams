@@ -21,7 +21,7 @@ import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
 import org.dcm4che3.io.DicomStreamException
 import se.nimsa.dcm4che.streams.DicomFlows.ValidationContext
-import se.nimsa.dcm4che.streams.DicomParsing.{Info, dicomPreambleLength, isPreamble}
+import se.nimsa.dcm4che.streams.DicomParsing.{Info, isPreamble, dicomPreambleLength}
 import org.dcm4che3.data.Tag._
 
 /**
@@ -61,24 +61,33 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
                   if (contexts.isDefined) {
                     val info = DicomParsing.dicomInfo(buffer.drop(dicomPreambleLength)).get
                     validateFileMetaInformation(buffer.drop(dicomPreambleLength), info)
+                    if (!isValidated.getOrElse(true) && drainIncoming)
+                      pull(in)
                   } else
                     setValidated()
-                else
+                else {
                   setFailed(new DicomStreamException("Not a DICOM stream"))
+                  if (drainIncoming)
+                    pull(in)
+                }
               else if (DicomParsing.isHeader(buffer))
                 if (contexts.isDefined) {
                   val info = DicomParsing.dicomInfo(buffer).get
                   validateSOPClassUID(buffer, info)
+                  if (!isValidated.getOrElse(true) && drainIncoming)
+                    pull(in)
                 } else
                   setValidated()
-              else
+              else {
                 setFailed(new DicomStreamException("Not a DICOM stream"))
+                if (drainIncoming)
+                  pull(in)
+              }
             else
               pull(in)
           case Some(true) =>
             push(out, chunk)
           case Some(false) =>
-            println("draining...")
             pull(in)
         }
       }
@@ -94,13 +103,13 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
                 val info = DicomParsing.dicomInfo(buffer).get
                 validateSOPClassUID(buffer, info)
               } else
-                failStage(new DicomStreamException("Not a DICOM stream"))
+                setFailed(new DicomStreamException("Not a DICOM stream"))
             else if (buffer.length == dicomPreambleLength && isPreamble(buffer))
               setValidated()
             else if (buffer.length >= 8 && DicomParsing.isHeader(buffer))
               setValidated()
             else
-              failStage(new DicomStreamException("Not a DICOM stream"))
+              setFailed(new DicomStreamException("Not a DICOM stream"))
             completeStage()
           case Some(true) =>
             completeStage()
@@ -205,9 +214,7 @@ class DicomValidateFlow(contexts: Option[Seq[ValidationContext]], drainIncoming:
       def setFailed(e: Throwable): Unit = {
         isValidated = Some(false)
         failException = Some(e)
-        if (drainIncoming)
-          pull(in)
-        else
+        if (!drainIncoming)
           failStage(failException.get)
       }
 
