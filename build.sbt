@@ -1,5 +1,5 @@
 name := "dcm4che-streams"
-version := "0.6"
+version := "0.7-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.4"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
@@ -50,16 +50,12 @@ publishTo := {
 
 pomIncludeRepository := { _ => false }
 
-pomExtra := (
+pomExtra :=
   <url>https://github.com/slicebox/dcm4che-streams</url>
-    <scm>
-      <url>git@github.com:slicebox/dcm4che-streams.git</url>
-      <connection>scm:git:git@github.com:slicebox/dcm4che-streams.git</connection>
-    </scm>
-    <developers>
-      <developer>
-        <id>KarlSjostrand</id>
-        <name>Karl Sjöstrand</name>
-        <url>https://github.com/KarlSjostrand</url>
-      </developer>
-    </developers>)
+  <developers>
+    <developer>
+      <id>KarlSjostrand</id>
+      <name>Karl Sjöstrand</name>
+      <url>https://github.com/KarlSjostrand</url>
+    </developer>
+  </developers>
