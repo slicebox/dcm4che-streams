@@ -1,7 +1,7 @@
 name := "dcm4che-streams"
-version := "0.5"
+version := "0.6"
 organization := "se.nimsa"
-scalaVersion := "2.12.3"
+scalaVersion := "2.12.4"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
 scalacOptions in (Compile, doc) ++= Seq(
   "-no-link-warnings" // Suppresses problems with Scaladoc @throws links
