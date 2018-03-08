@@ -11,7 +11,7 @@ scalacOptions in (Compile, doc) ++= Seq(
 
 resolvers ++= Seq(
   "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/",
-  "dcm4che Repository" at "http://www.dcm4che.org/maven2/")
+  "dcm4che Repository" at "https://www.dcm4che.org/maven2/")
 
 // deps
 
