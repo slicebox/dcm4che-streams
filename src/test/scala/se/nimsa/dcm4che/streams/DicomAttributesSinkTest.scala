@@ -8,16 +8,18 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import akka.testkit.TestKit
 import akka.util.ByteString
-import org.dcm4che3.data._
-import org.dcm4che3.io.{DicomInputStream, DicomOutputStream, DicomStreamException}
+import org.dcm4che3.data.{Attributes, Fragments}
+import org.dcm4che3.io.{DicomInputStream, DicomOutputStream}
 import org.scalatest.{Assertion, AsyncFlatSpecLike, BeforeAndAfterAll, Matchers}
+import se.nimsa.dicom.streams.DicomFlows.attributeFlow
+import se.nimsa.dicom.streams.{DicomParseFlow, DicomStreamException}
+import se.nimsa.dicom.{Tag, UID, VR}
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
 class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers with BeforeAndAfterAll {
 
   import DicomAttributesSink._
-  import DicomFlows._
   import TestData._
   import TestUtils._
 

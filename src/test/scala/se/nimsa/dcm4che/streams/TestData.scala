@@ -1,7 +1,7 @@
 package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
-import org.dcm4che3.data.UID
+import se.nimsa.dicom._
 
 object TestData {
 

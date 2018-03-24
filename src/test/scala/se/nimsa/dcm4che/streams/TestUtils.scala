@@ -4,8 +4,9 @@ import java.util.zip.Deflater
 
 import akka.stream.testkit.TestSubscriber
 import akka.util.ByteString
-import org.dcm4che3.data.VR
-import se.nimsa.dcm4che.streams.DicomParts._
+import se.nimsa.dicom.VR.VR
+import se.nimsa.dicom.streams.DicomParts._
+import se.nimsa.dicom.tagToString
 
 object TestUtils {
 

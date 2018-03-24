@@ -18,7 +18,8 @@ package se.nimsa.dcm4che.streams
 
 import akka.stream.scaladsl.{Flow, Keep, Sink}
 import org.dcm4che3.data.{Attributes, Fragments, Sequence}
-import se.nimsa.dcm4che.streams.DicomParts._
+import se.nimsa.dicom.streams.DicomParts._
+import se.nimsa.dicom.streams.{DicomFlows, DicomParsing}
 
 import scala.concurrent.{ExecutionContext, Future}
 
