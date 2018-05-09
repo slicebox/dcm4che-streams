@@ -73,6 +73,9 @@ object DicomModifyFlow {
         explicitVR = header.explicitVR
       }
 
+      def valueOrNot(bytes: ByteString): List[DicomPart] =
+        if (bytes.isEmpty) Nil else DicomValueChunk(bigEndian, bytes, last = true) :: Nil
+
       def headerAndValueParts(tagPath: TagPath, modification: ByteString => ByteString): List[DicomPart] = {
         val valueBytes = modification(ByteString.empty)
         val vr = StandardElementDictionary.INSTANCE.vrOf(tagPath.tag)
@@ -80,8 +83,7 @@ object DicomModifyFlow {
         if (vr == VR.SQ) throw new IllegalArgumentException("Cannot insert sequence attributes")
         val isFmi = DicomParsing.isFileMetaInformation(tagPath.tag)
         val header = DicomHeader(tagPath.tag, vr, valueBytes.length, isFmi, bigEndian, explicitVR)
-        val value = DicomValueChunk(bigEndian, valueBytes, last = true)
-        header :: value :: Nil
+        header :: valueOrNot(valueBytes)
       }
 
       def isBetween(tagToTest: TagPath, upperTag: TagPath, lowerTagMaybe: Option[TagPath]): Boolean =
@@ -90,37 +92,41 @@ object DicomModifyFlow {
       def isInDataset(tagToTest: TagPath, sequenceMaybe: Option[TagPathSequence]): Boolean =
         sequenceMaybe.map(tagToTest.startsWithSubPath).getOrElse(tagToTest.isRoot)
 
+      def findInsertParts: List[DicomPart] = sortedModifications
+        .filter(_.insert)
+        .filter(m => tagPath.exists(tp => isBetween(m.tagPath, tp, latestTagPath)))
+        .filter(m => isInDataset(m.tagPath, tagPath.flatMap(_.previous)))
+        .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
+
+      def findModifyPart(header: DicomHeader): List[DicomPart] = sortedModifications
+        .find(m => tagPath.exists(m.matches))
+        .map { tagModification =>
+          if (header.length > 0) {
+            currentHeader = Some(header)
+            currentModification = Some(tagModification)
+            value = ByteString.empty
+            Nil
+          } else {
+            val newValue = tagModification.modification(ByteString.empty)
+            val newHeader = header.withUpdatedLength(newValue.length)
+            newHeader :: valueOrNot(newValue)
+          }
+        }
+        .getOrElse(header :: Nil)
+
       override def onPart(part: DicomPart): List[DicomPart] =
         part match {
           case header: DicomHeader =>
             updateSyntax(header)
-            val insertParts = sortedModifications
-              .filter(_.insert)
-              .filter(m => tagPath.exists(tp => isBetween(m.tagPath, tp, latestTagPath)))
-              .filter(m => isInDataset(m.tagPath, tagPath.flatMap(_.previous)))
-              .flatMap(m => headerAndValueParts(m.tagPath, m.modification))
-            val modifyPart = sortedModifications
-              .find(m => tagPath.exists(m.matches))
-              .map { tagModification =>
-                if (header.length > 0) {
-                  currentHeader = Some(header)
-                  currentModification = Some(tagModification)
-                  value = ByteString.empty
-                  Nil
-                } else {
-                  val newValue = tagModification.modification(ByteString.empty)
-                  val newHeader = header.withUpdatedLength(newValue.length)
-                  val chunkOrNot = if (newValue.nonEmpty) DicomValueChunk(bigEndian, newValue, last = true) :: Nil else Nil
-                  newHeader :: chunkOrNot
-                }
-              }
-              .getOrElse(header :: Nil)
+            val insertParts = findInsertParts
+            val modifyPart = findModifyPart(header)
             latestTagPath = tagPath
             insertParts ::: modifyPart
 
-          case part: DicomSequence =>
+          case sequence: DicomSequence =>
+            val insertParts = findInsertParts
             latestTagPath = tagPath
-            part :: Nil
+            insertParts ::: sequence :: Nil
 
           case chunk: DicomValueChunk =>
             if (currentModification.isDefined && currentHeader.isDefined) {
@@ -130,14 +136,15 @@ object DicomModifyFlow {
                 val newHeader = currentHeader.get.withUpdatedLength(newValue.length)
                 currentModification = None
                 currentHeader = None
-                val chunkOrNot = if (newValue.nonEmpty) DicomValueChunk(bigEndian, newValue, last = true) :: Nil else Nil
-                newHeader :: chunkOrNot
+                newHeader :: valueOrNot(newValue)
               } else
                 Nil
             } else
               chunk :: Nil
 
-          case otherPart => otherPart :: Nil
+          case otherPart =>
+            latestTagPath = tagPath
+            otherPart :: Nil
         }
 
       override def onEnd(): List[DicomPart] =
