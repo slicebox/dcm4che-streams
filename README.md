@@ -6,6 +6,14 @@ Travis            | [![Build Status](https://travis-ci.org/slicebox/dcm4che-stre
 Coveralls         | [![Coverage Status](https://coveralls.io/repos/github/slicebox/dcm4che-streams/badge.svg?branch=develop)](https://coveralls.io/github/slicebox/dcm4che-streams?branch=develop) | Code coverage
 
 
+
+### Migration to dicom-streams
+
+This project has migrated to the project [dicom-streams](https://github.com/slicebox/dicom-streams) as is no longer maintained.
+dicom-streams aims to become a standalone (partial) DICOM implementation with a fully streaming API.
+
+### Introduction
+
 The purpose of this project is to integrate [akka-streams](http://doc.akka.io/docs/akka/current/scala/stream/index.html) 
 with [dcm4che](https://github.com/dcm4che/dcm4che). Features will be added as needed (mainly in the 
 [slicebox](https://github.com/slicebox/slicebox) project) and may include streaming reading and writing of DICOM data,
