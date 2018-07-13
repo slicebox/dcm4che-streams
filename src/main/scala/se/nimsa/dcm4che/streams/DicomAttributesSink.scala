@@ -18,8 +18,9 @@ package se.nimsa.dcm4che.streams
 
 import akka.stream.scaladsl.{Flow, Keep, Sink}
 import org.dcm4che3.data.{Attributes, Fragments, Sequence}
-import se.nimsa.dicom.streams.DicomParts._
-import se.nimsa.dicom.streams.{DicomFlows, DicomParsing}
+import se.nimsa.dicom.data.DicomParts._
+import se.nimsa.dicom.data.Elements._
+import se.nimsa.dicom.streams.{DicomFlows, ElementFlows}
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -32,7 +33,7 @@ object DicomAttributesSink {
   private case class AttributesSinkData(maybeFmi: Option[Attributes],
                                         maybeAttributesData: Option[AttributesData])
 
-  private def setFmiValue(dicomAttribute: DicomAttribute, fmi: Attributes): Attributes = {
+  private def setFmiValue(dicomAttribute: ValueElement, fmi: Attributes): Attributes = {
     val header = dicomAttribute.header
     if (header.length == 0)
       fmi.setNull(header.tag, header.vr)
@@ -76,23 +77,22 @@ object DicomAttributesSink {
     */
   def attributesSink(implicit ec: ExecutionContext): Sink[DicomPart, Future[(Option[Attributes], Option[Attributes])]] =
     Flow[DicomPart]
-      .via(DicomFlows.guaranteedDelimitationFlow)
-      .via(DicomFlows.attributeFlow)
+      .via(ElementFlows.elementFlow)
       .toMat(
         Sink.fold[AttributesSinkData, DicomPart](AttributesSinkData(None, None)) { case (attributesSinkData, dicomPart) =>
           dicomPart match {
 
-            case dicomAttribute: DicomAttribute if dicomAttribute.header.isFmi =>
+            case dicomAttribute: ValueElement if dicomAttribute.header.isFmi =>
               val fmi = attributesSinkData.maybeFmi
                 .getOrElse(new Attributes(dicomAttribute.bigEndian, 9))
               attributesSinkData.copy(maybeFmi = Some(setFmiValue(dicomAttribute, fmi)))
 
-            case dicomAttribute: DicomAttribute =>
+            case dicomAttribute: ValueElement =>
               val attributesData = attributesSinkData.maybeAttributesData
                 .getOrElse(AttributesData(Seq(new Attributes(dicomAttribute.bigEndian, 64)), Seq.empty, None))
               attributesSinkData.copy(maybeAttributesData = Some(setValue(dicomAttribute, attributesData)))
 
-            case sequence: DicomSequence =>
+            case sequence: SequenceElement =>
               val attributesData = attributesSinkData.maybeAttributesData
                 .map { attributesData =>
                   val newSeq = attributesData.attributesStack.head.newSequence(sequence.tag, 10)
@@ -107,10 +107,10 @@ object DicomAttributesSink {
                 }
               attributesSinkData.copy(maybeAttributesData = Some(attributesData))
 
-            case _: DicomSequenceDelimitation =>
+            case _: SequenceDelimitationElement =>
               attributesSinkData.copy(maybeAttributesData = attributesSinkData.maybeAttributesData.map(attrsData => attrsData.copy(sequenceStack = attrsData.sequenceStack.tail)))
 
-            case fragments: DicomFragments =>
+            case fragments: FragmentsElement =>
               val attributesData = attributesSinkData.maybeAttributesData
                 .getOrElse(AttributesData(
                   Seq(new Attributes(fragments.bigEndian, 64)),
@@ -118,7 +118,7 @@ object DicomAttributesSink {
                   Some(new Fragments(null, fragments.tag, fragments.vr, fragments.bigEndian, 10))))
               attributesSinkData.copy(maybeAttributesData = Some(attributesData))
 
-            case dicomFragment: DicomFragment =>
+            case dicomFragment: FragmentElement =>
               attributesSinkData.maybeAttributesData.foreach { attributesData =>
                 attributesData.currentFragments.foreach { fragments =>
                   val bytes = dicomFragment.bytes.toArray

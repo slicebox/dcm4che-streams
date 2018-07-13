@@ -1,5 +1,5 @@
 name := "dcm4che-streams"
-version := "0.7-SNAPSHOT"
+version := "0.8-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.5"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
@@ -20,7 +20,7 @@ libraryDependencies ++= {
   Seq(
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-    "se.nimsa" %% "dicom-streams" % "0.1-SNAPSHOT",
+    "se.nimsa" %% "dicom-streams" % "0.1",
     "org.slf4j" % "slf4j-simple" % "1.7.25",
     "org.dcm4che" % "dcm4che-core" % "3.3.8" % "provided",
     "org.scalatest" %% "scalatest" % "3.0.5" % "test",

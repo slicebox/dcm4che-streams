@@ -19,6 +19,7 @@ import scala.concurrent.{ExecutionContextExecutor, Future}
 
 class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSpec")) with AsyncFlatSpecLike with Matchers with BeforeAndAfterAll {
 
+  import DicomParseFlow._
   import DicomAttributesSink._
   import TestData._
   import TestUtils._
@@ -45,8 +46,7 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
 
   def toFlowAttributes(bytes: ByteString): Future[(Option[Attributes], Option[Attributes])] =
     Source.single(bytes)
-      .via(new DicomParseFlow())
-      .via(attributeFlow)
+      .via(parseFlow)
       .runWith(attributesSink)
 
   def assertEquivalentToDcm4che(bytes: ByteString): Future[Assertion] = {
@@ -132,8 +132,8 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
             flowDataset.tags shouldEqual dataset.tags
             val v1 = flowDataset.getValue(Tag.PixelData)
             val v2 = dataset.getValue(Tag.PixelData)
-            v1 shouldBe a [Fragments]
-            v2 shouldBe a [Fragments]
+            v1 shouldBe a[Fragments]
+            v2 shouldBe a[Fragments]
             val f1 = v1.asInstanceOf[Fragments]
             val f2 = v2.asInstanceOf[Fragments]
             f1.size shouldBe 2
@@ -170,6 +170,16 @@ class DicomAttributesSinkTest extends TestKit(ActorSystem("DicomAttributesSinkSp
     val bytes = toBytes(attr, UID.ExplicitVRLittleEndian)
     val attr2 = toAttributes(bytes)._2.get
     attr2.getString(Tag.PatientName) shouldBe "Ö₯"
+  }
+
+  it should "handle empty sequences and items" in {
+    val bytes = sequence(Tag.AbstractPriorCodeSequence) ++ item() ++ itemEnd ++ sequenceEnd
+    assertEquivalentToDcm4che(bytes)
+  }
+
+  it should "handle empty sequences and items with defined length" in {
+    val bytes = sequence(Tag.AbstractPriorCodeSequence, 8) ++ item(0)
+    assertEquivalentToDcm4che(bytes)
   }
 
 }
