@@ -446,4 +446,34 @@ class DicomParseFlowTest extends TestKit(ActorSystem("DicomFlowSpec")) with Flat
       .expectFragmentsDelimitation()
       .expectDicomComplete()
   }
+  it should "parse sequences with VR UN as a block of bytes" in {
+    val unSequence = tagToBytes(Tag.CTExposureSequence, bigEndian = false) ++ ByteString('U', 'N', 0, 0) ++ intToBytes(24, bigEndian = false)
+    val bytes = patientNameJohnDoe ++ unSequence ++ item(16) ++ studyDate
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.CTExposureSequence, VR.UN, 24)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
+
+  it should "parse sequences with VR UN, and where the nested data set(s) have implicit VR, as a block of bytes" in {
+    val unSequence = tagToBytes(Tag.CTExposureSequence, bigEndian = false) ++ ByteString('U', 'N', 0, 0) ++ intToBytes(24, bigEndian = false)
+    val bytes = patientNameJohnDoe ++ unSequence ++ item(16) ++ patientNameJohnDoeImplicit
+
+    val source = Source.single(bytes)
+      .via(new DicomParseFlow())
+      .via(DicomFlows.printFlow)
+
+    source.runWith(TestSink.probe[DicomPart])
+      .expectHeader(Tag.PatientName)
+      .expectValueChunk()
+      .expectHeader(Tag.CTExposureSequence, VR.UN, 24)
+      .expectValueChunk()
+      .expectDicomComplete()
+  }
 }
