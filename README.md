@@ -2,8 +2,8 @@
 
 Service | Status | Description
 ------- | ------ | -----------
-Travis            | [![Build Status](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=develop)](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=develop) | [Tests](https://travis-ci.org/slicebox/dcm4che-streams/)
-Coveralls         | [![Coverage Status](https://coveralls.io/repos/github/slicebox/dcm4che-streams/badge.svg?branch=develop)](https://coveralls.io/github/slicebox/dcm4che-streams?branch=develop) | Code coverage
+Travis            | [![Build Status](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=master)](https://travis-ci.org/slicebox/dcm4che-streams.svg?branch=master) | [Tests](https://travis-ci.org/slicebox/dcm4che-streams/)
+Coveralls         | [![Coverage Status](https://coveralls.io/repos/github/slicebox/dcm4che-streams/badge.svg?branch=master)](https://coveralls.io/github/slicebox/dcm4che-streams?branch=master) | Code coverage
 
 
 
