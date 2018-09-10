@@ -1,5 +1,5 @@
 name := "dcm4che-streams"
-version := "0.8"
+version := "0.9-SNAPSHOT"
 organization := "se.nimsa"
 scalaVersion := "2.12.6"
 scalacOptions := Seq("-encoding", "UTF-8", "-Xlint", "-deprecation", "-unchecked", "-feature", "-target:jvm-1.8")
