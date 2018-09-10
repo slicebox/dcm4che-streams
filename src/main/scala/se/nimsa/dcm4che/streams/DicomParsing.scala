@@ -17,7 +17,7 @@
 package se.nimsa.dcm4che.streams
 
 import akka.util.ByteString
-import org.dcm4che3.data.{ElementDictionary, UID, VR}
+import org.dcm4che3.data.{ElementDictionary, StandardElementDictionary, UID, VR}
 import org.dcm4che3.io.DicomStreamException
 
 /**
@@ -170,7 +170,7 @@ trait DicomParsing {
     else if (explicitVr)
       (tag, VR.valueOf(bytesToVR(data.drop(4))))
     else
-      (tag, VR.UN)
+      (tag, StandardElementDictionary.INSTANCE.vrOf(tag))
   }
 
   def isPreamble(data: ByteString): Boolean = data.length >= dicomPreambleLength && data.slice(dicomPreambleLength - 4, dicomPreambleLength) == ByteString('D', 'I', 'C', 'M')

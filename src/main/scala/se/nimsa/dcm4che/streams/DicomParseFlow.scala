@@ -253,7 +253,7 @@ class DicomParseFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate
           (tag, vr, 12, lengthToLong(bytesToInt(reader.remainingData.drop(8), dicomState.bigEndian)))
         }
       else
-        (tag, VR.UN, 8, lengthToLong(bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian)))
+        (tag, vr, 8, lengthToLong(bytesToInt(tagVrBytes.drop(4), dicomState.bigEndian)))
     }
 
     def readDatasetHeader(reader: ByteReader, state: DatasetHeaderState): Option[DicomPart] = {
@@ -262,15 +262,13 @@ class DicomParseFlow(chunkSize: Int = 8192, stopTag: Option[Int] = None, inflate
       if (stopTag.isDefined && tag == stopTag.get)
         None
       else if (vr != null) {
-        val updatedVr1 = if (vr == VR.UN) ElementDictionary.getStandardElementDictionary.vrOf(tag) else vr
-        val updatedVr2 = if ((updatedVr1 == VR.UN) && valueLength == -1) VR.SQ else updatedVr1
         val bytes = reader.take(headerLength)
-        if (updatedVr2 == VR.SQ)
+        if (vr == VR.SQ || vr == VR.UN && valueLength == -1)
           Some(DicomSequence(tag, valueLength, state.bigEndian, bytes))
         else if (valueLength == -1)
-          Some(DicomFragments(tag, valueLength, updatedVr2, state.bigEndian, bytes))
+          Some(DicomFragments(tag, valueLength, vr, state.bigEndian, bytes))
         else
-          Some(DicomHeader(tag, updatedVr2, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
+          Some(DicomHeader(tag, vr, valueLength, isFmi = false, state.bigEndian, state.explicitVR, bytes))
       } else
         tag match {
           case 0xFFFEE000 => Some(DicomSequenceItem(state.itemIndex + 1, valueLength, state.bigEndian, reader.take(8)))
